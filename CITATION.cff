@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use CoCoFold2, please cite the CoCoFold2 manuscript and this software release."
+title: "CoCoFold2: Diffusion-enabled Experimental Latent Test-time Adaptation of Frozen Protein Structure Priors"
+type: software
+authors:
+  - family-names: Liao
+    given-names: Junwen
+  - family-names: Hu
+    given-names: Mingxu
+  - family-names: Bao
+    given-names: Chenglong
+version: 0.1.0
+license: Apache-2.0
+repository-code: "https://github.com/jwliaomath/CoCoFold2.git"
+abstract: >-
+  CoCoFold2 is a deterministic experimental refinement framework that couples
+  a frozen Protenix-style protein diffusion prior to cryo-EM particle
+  observations through target-specific latent and auxiliary renderer-parameter
+  optimization.
+preferred-citation:
+  type: article
+  title: "CoCoFold2: Diffusion-enabled Experimental Latent Test-time Adaptation of Frozen Protein Structure Priors"
+  authors:
+    - family-names: Liao
+      given-names: Junwen
+    - family-names: Hu
+      given-names: Mingxu
+    - family-names: Bao
+      given-names: Chenglong
+  doi: "TODO_DOI"

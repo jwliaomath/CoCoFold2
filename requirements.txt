@@ -1,0 +1,33 @@
+# Core dependencies for the CoCoFold2 cryo-EM particle workflow.
+# An NVIDIA GPU is required. This stack was tested with CUDA 12.6-compatible
+# NVIDIA drivers. PyTorch/CUDA installation can be system-specific.
+# Protenix model parameters are not distributed by CoCoFold2.
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+torch==2.7.1
+torchvision==0.22.1
+torchaudio==2.7.1
+protenix==1.0.2
+numpy==2.4.1
+scipy==1.17.0
+pandas==2.3.1
+matplotlib==3.10.5
+mrcfile==1.5.4
+gemmi==0.6.7
+starfile==0.4.12
+biopython==1.85
+biotite==1.4.0
+ml-collections==1.1.0
+optree==0.17.0
+einops==0.8.2
+deepspeed==0.17.5
+fair-esm==2.0.0
+PyYAML==6.0.2
+tqdm==4.67.1
+loguru==0.7.3
+ninja==1.13.0
+triton==3.3.1
+cuequivariance==0.8.1
+cuequivariance-ops-cu12==0.8.0
+cuequivariance-ops-torch-cu12==0.8.0
+cuequivariance-torch==0.8.0
