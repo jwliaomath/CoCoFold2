@@ -18,7 +18,7 @@ source "${ENV_FILE}"
 : "${LOG_ROOT:?LOG_ROOT is required}"
 
 [[ -f "${INPUT_JSON}" ]] || { echo "ERROR: missing INPUT_JSON: ${INPUT_JSON}" >&2; exit 1; }
-[[ -f "${COCOFOLD2_ROOT}/src/inference.py" ]] || { echo "ERROR: inference.py not found under COCOFOLD2_ROOT" >&2; exit 1; }
+[[ -f "${COCOFOLD2_ROOT}/src/inference.py" ]] || { echo "ERROR: src/inference.py not found under COCOFOLD2_ROOT" >&2; exit 1; }
 [[ -d "${COCOFOLD2_ROOT}/checkpoint" ]] || { echo "ERROR: Protenix checkpoint/ directory is missing" >&2; exit 1; }
 [[ -d "${COCOFOLD2_ROOT}/common" ]] || { echo "ERROR: Protenix common/ directory is missing" >&2; exit 1; }
 
