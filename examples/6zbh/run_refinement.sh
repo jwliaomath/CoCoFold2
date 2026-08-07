@@ -41,7 +41,7 @@ fi
 
 cd "${COCOFOLD2_ROOT}"
 CMD=(
-  python -u train.py
+  python -u src/train.py
   --star_data_dir "${STAR_FILE}"
   --mrc_data_dir "${MRC_WITH_SLASH}"
   --output_trained_model_dir "${OUTPUT_PREFIX}"
