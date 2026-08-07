@@ -27,7 +27,7 @@ PARAMS_WITH_SLASH="${PARAMS_ROOT%/}/"
 
 cd "${COCOFOLD2_ROOT}"
 CMD=(
-  python -u inference.py
+  python -u src/inference.py
   --input_json_path "${INPUT_JSON}"
   --sample_name 6zbh
   --output_model_dir "${PARAMS_WITH_SLASH}"
