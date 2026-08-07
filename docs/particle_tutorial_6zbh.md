@@ -69,7 +69,7 @@ We only need a few of particles to run the refinement same as the Step 2 in [CoC
 Run this command from the CoCoFold2 repository root:
 
 ```bash
-python -u inference.py \
+python -u src/inference.py \
   --input_json_path data/6zbh/input/6zbh.json \
   --sample_name 6zbh \
   --output_model_dir params/ \
@@ -93,7 +93,7 @@ Protenix also writes its standard prediction outputs under `outputs/protenix_6zb
 Generate the deterministic initial structure from the cache:
 
 ```bash
-python get_pdb.py \
+python src/get_pdb.py \
   --pdbid 6ZBH \
   --diffusion_data_dir params/6zbh_diffusion_data.pth \
   --cif_path outputs/protenix_6zbh/SAMPLE_CIF_PATH \
@@ -127,7 +127,7 @@ This fitted model is the optimization-frame topology and placement template supp
 ### Manuscript-consistent fixed-frame configuration
 
 ```bash
-python -u train.py \
+python -u src/train.py \
   --star_data_dir data/6zbh/particles/366.star \
   --mrc_data_dir data/6zbh/particles/ \
   --output_trained_model_dir outputs/6zbh/checkpoint_ \
