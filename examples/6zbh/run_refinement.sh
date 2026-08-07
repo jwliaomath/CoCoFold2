@@ -23,7 +23,7 @@ source "${ENV_FILE}"
 [[ -d "${MRC_ROOT}" ]] || { echo "ERROR: missing particle root directory: ${MRC_ROOT}" >&2; exit 1; }
 [[ -f "${FITTED_INITIAL_CIF}" ]] || { echo "ERROR: missing fitted initial CIF: ${FITTED_INITIAL_CIF}. Complete the external rigid-body fit first." >&2; exit 1; }
 [[ -f "${DIFFUSION_DATA}" ]] || { echo "ERROR: missing diffusion cache: ${DIFFUSION_DATA}" >&2; exit 1; }
-[[ -f "${COCOFOLD2_ROOT}/train.py" ]] || { echo "ERROR: train.py not found under COCOFOLD2_ROOT" >&2; exit 1; }
+[[ -f "${COCOFOLD2_ROOT}/src/train.py" ]] || { echo "ERROR: src/train.py not found under COCOFOLD2_ROOT" >&2; exit 1; }
 
 mkdir -p "${OUTPUT_ROOT}/6zbh" "${LOG_ROOT}"
 MRC_WITH_SLASH="${MRC_ROOT%/}/"
