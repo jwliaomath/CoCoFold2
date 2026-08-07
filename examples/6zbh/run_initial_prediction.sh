@@ -23,7 +23,7 @@ if [[ "${PROTENIX_SAMPLE_CIF}" == TODO_* ]]; then
 fi
 [[ -f "${DIFFUSION_DATA}" ]] || { echo "ERROR: missing diffusion cache: ${DIFFUSION_DATA}" >&2; exit 1; }
 [[ -f "${PROTENIX_SAMPLE_CIF}" ]] || { echo "ERROR: missing Protenix sample CIF: ${PROTENIX_SAMPLE_CIF}" >&2; exit 1; }
-[[ -f "${COCOFOLD2_ROOT}/get_pdb.py" ]] || { echo "ERROR: get_pdb.py not found under COCOFOLD2_ROOT" >&2; exit 1; }
+[[ -f "${COCOFOLD2_ROOT}/src/get_pdb.py" ]] || { echo "ERROR: get_pdb.py not found under COCOFOLD2_ROOT" >&2; exit 1; }
 
 mkdir -p "${OUTPUT_ROOT}/6zbh_initial" "${LOG_ROOT}"
 cd "${COCOFOLD2_ROOT}"
