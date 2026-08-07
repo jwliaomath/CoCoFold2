@@ -28,7 +28,7 @@ fi
 mkdir -p "${OUTPUT_ROOT}/6zbh_initial" "${LOG_ROOT}"
 cd "${COCOFOLD2_ROOT}"
 CMD=(
-  python get_pdb.py
+  python src/get_pdb.py
   --pdbid 6ZBH
   --diffusion_data_dir "${DIFFUSION_DATA}"
   --cif_path "${PROTENIX_SAMPLE_CIF}"
