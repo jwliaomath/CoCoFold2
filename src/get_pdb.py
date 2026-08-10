@@ -7,7 +7,20 @@ from typing import Any
 from protenix.utils.torch_utils import autocasting_disable_decorator
 from model.generator import sample_diffusion
 from protenix.model.modules.diffusion import DiffusionModule
-from utils import replace_cif_coordinates
+from utils import cif_to_tensor, replace_cif_coordinates
+
+
+def _tree_to_device(value: Any, device: torch.device) -> Any:
+    """Move every tensor in a nested cache object to one device."""
+    if isinstance(value, torch.Tensor):
+        return value.to(device)
+    if isinstance(value, dict):
+        return {key: _tree_to_device(item, device) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_tree_to_device(item, device) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_tree_to_device(item, device) for item in value)
+    return value
 
 def _sample_diffusion(configs, training=False, **kwargs: Any) -> torch.Tensor:
     """
@@ -39,28 +52,70 @@ def _sample_diffusion(configs, training=False, **kwargs: Any) -> torch.Tensor:
     )(configs=configs, **_configs, **kwargs)
 
 def main(args):
-    device = args.device
+    device = torch.device(args.device)
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError(f"CUDA device requested but CUDA is unavailable: {device}")
+        torch.cuda.set_device(device)
     diffusion_data_dir = args.diffusion_data_dir
     out_dir = args.out_dir
     cif_path = args.cif_path
 
     print(f"Loading diffusion data from: {diffusion_data_dir}")
-    diffusion_data = torch.load(diffusion_data_dir, weights_only=False)
+    # Contextual split caches are intentionally saved on CPU for portability.
+    # Loading every cache on CPU first also prevents stale source-device IDs
+    # from controlling placement when a cache is moved between machines.
+    diffusion_data = torch.load(
+        diffusion_data_dir, map_location="cpu", weights_only=False
+    )
 
-    pred_dict = diffusion_data["pred_dict"]
-    input_feature_dict = diffusion_data["input_feature_dict"]
-    s_inputs = diffusion_data["s_inputs"]
-    s = diffusion_data["s_trunk"]
-    z = diffusion_data["z_trunk"]
-    pair_z = diffusion_data["pair_z"]
-    p_lm = diffusion_data["p_lm"]
-    c_l = diffusion_data["c_l"]
-    N_sample = diffusion_data["N_sample"]
-    noise_schedule = diffusion_data["noise_schedule"]
-    inplace_safe = diffusion_data["inplace_safe"]
+    pred_dict = _tree_to_device(diffusion_data["pred_dict"], device)
+    input_feature_dict = _tree_to_device(
+        diffusion_data["input_feature_dict"], device
+    )
+    s_inputs = diffusion_data["s_inputs"].to(device)
+    s = diffusion_data["s_trunk"].to(device)
+    z = (
+        None
+        if diffusion_data["z_trunk"] is None
+        else diffusion_data["z_trunk"].to(device)
+    )
+    pair_z = (
+        None
+        if diffusion_data["pair_z"] is None
+        else diffusion_data["pair_z"].to(device)
+    )
+    p_lm = (
+        None if diffusion_data["p_lm"] is None else diffusion_data["p_lm"].to(device)
+    )
+    c_l = (
+        None if diffusion_data["c_l"] is None else diffusion_data["c_l"].to(device)
+    )
+    N_sample = int(diffusion_data["N_sample"])
+    noise_schedule = diffusion_data["noise_schedule"].to(device)
+    inplace_safe = bool(diffusion_data["inplace_safe"])
     configs = diffusion_data["configs"]
-    enable_efficient_fusion = diffusion_data["enable_efficient_fusion"]
+    enable_efficient_fusion = bool(diffusion_data["enable_efficient_fusion"])
     configs.train_deterministic = True
+    configs.train_seed = 42
+
+    conditioning_name = "pair_z" if pair_z is not None else "z_trunk"
+    conditioning = pair_z if pair_z is not None else z
+    if conditioning is None:
+        raise ValueError("diffusion cache contains neither pair_z nor z_trunk")
+    n_atom = int(input_feature_dict["atom_to_token_idx"].shape[-1])
+    print(
+        "Diffusion inputs:",
+        {
+            "device": str(device),
+            "n_token": int(s_inputs.shape[-2]),
+            "n_atom": n_atom,
+            "conditioning": conditioning_name,
+            "conditioning_shape": list(conditioning.shape),
+            "p_lm_shape": None if p_lm is None else list(p_lm.shape),
+            "c_l_shape": None if c_l is None else list(c_l.shape),
+        },
+    )
 
     print("Initializing Diffusion Module...")
     diffusion_module = DiffusionModule(**configs.model.diffusion_module).to(device)
@@ -94,6 +149,15 @@ def main(args):
             enable_efficient_fusion=enable_efficient_fusion,
         )
 
+    generated_coordinates = pred_dict["coordinate"][0]
+    template_coordinates, _ = cif_to_tensor(cif_path)
+    if generated_coordinates.shape != template_coordinates.shape:
+        raise ValueError(
+            "generated coordinates do not match the topology template: "
+            f"generated {tuple(generated_coordinates.shape)}, "
+            f"template {tuple(template_coordinates.shape)}"
+        )
+
     # 创建输出目录
     os.makedirs(out_dir, exist_ok=True)
     out_pdb_path = os.path.join(out_dir, f"{args.pdbid}_initial_prediction.pdb")
@@ -102,7 +166,7 @@ def main(args):
     replace_cif_coordinates(
         input_cif=cif_path,
         output_cif=out_pdb_path,
-        new_coords=pred_dict["coordinate"][0].cpu().numpy(),
+        new_coords=generated_coordinates.detach().cpu().numpy(),
     )
     
     print(f"✅ Prediction successfully saved to: {out_pdb_path}")
