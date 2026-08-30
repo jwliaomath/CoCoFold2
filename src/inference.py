@@ -682,7 +682,9 @@ if __name__ == "__main__":
         "--sample_name",
     )
     parser.add_argument(
-        "--train_deterministic",default=True
+    "--train-deterministic",
+    action=argparse.BooleanOptionalAction,
+    default=True,
     )
     parser.add_argument(
         "--output_model_dir", default=None

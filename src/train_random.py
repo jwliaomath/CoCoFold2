@@ -126,15 +126,15 @@ def main(args):
     configs = diffusion_data["configs"]
     enable_efficient_fusion = diffusion_data["enable_efficient_fusion"]
     configs.train_deterministic = args.train_deterministic
-
+    print('train_deterministic',configs.train_deterministic)
     diffusion_module = DiffusionModule(**configs.model.diffusion_module).to(device)
     diffusion_module.load_state_dict(diffusion_data["model_state"])
     del diffusion_data
  
-    torch.manual_seed(42)
-    np.random.seed(42)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(42)
+    #torch.manual_seed(42)
+    #np.random.seed(42)
+    #if torch.cuda.is_available():
+    #    torch.cuda.manual_seed(42)
     
     for name, param in diffusion_module.named_parameters():
         param.requires_grad = False
@@ -197,7 +197,7 @@ def main(args):
     lr_sdevs = 5e-3
     lr_bias = 1e-2
     lr_mul = 2e-4
-    # z_reg_weight = 0
+    z_reg_weight = 0
 
     # s_inputs_bias = torch.zeros_like(s_inputs,requires_grad=True).to(device)
     # s_bias = torch.zeros_like(s,requires_grad=True).to(device)
@@ -242,7 +242,7 @@ def main(args):
     print('lr_atom_weight',lr_atoms_weights)
     print('lr_sdevs',lr_sdevs)
     print('lr_bias',lr_bias)
-    # print('z_reg_weight',z_reg_weight)
+    print('z_reg_weight',z_reg_weight)
     if z_mul is not None:
         print('lr_mul',lr_mul)
     output_trained_model_dir = str(args.output_trained_model_dir)
@@ -386,14 +386,10 @@ def main(args):
                             inplace_safe=False,
                             enable_efficient_fusion=enable_efficient_fusion,
                         )
-                    if flag_update_mat:
-                        with torch.no_grad():
-                            _, current_rotation, current_translation = kabsch_alignment(pred_dict["coordinate"][0],ref_coords,return_transform=True)
-                            rotation_diff = torch.trace(current_rotation @ rotation.T)
-                        if rotation_diff < 2.5:
-                            print('Flip happened')
-                            rotation = current_rotation
-                            translation = current_translation
+
+                    with torch.no_grad():
+                        _, rotation, translation = kabsch_alignment(pred_dict["coordinate"][0],ref_coords,return_transform=True)
+
                     atom_coord = pred_dict["coordinate"][0] @ rotation.T + translation
                     proj = pdb2img(
                         atom_coord.reshape(1,-1,3),
@@ -467,10 +463,10 @@ def main(args):
                         data=data[num_start:num_end].to(torch.float),
                         ctf=ctf[num_start:num_end].to(torch.float),
                         box_size=box_size,
+                        apix=float(args.apix),
                         max_freq=(2 * float(args.apix)) / target_resolution,
-                        #apix=float(args.apix),
-                        #shell_weight_freqs=shell_weight_freqs,
-                        #shell_weights=shell_weights,
+                        shell_weight_freqs=shell_weight_freqs,
+                        shell_weights=shell_weights,
                     ) / data.shape[0]
                     '''
                     proj_ft = torch.fft.fftshift(torch.fft.fft2(proj.to(torch.float)), dim=(-2, -1))
@@ -494,7 +490,7 @@ def main(args):
                                             torch.relu(limit[0] - sdevs.to(torch.float))) + torch.mean((torch.relu(atom_weights.to(torch.float) - limit[3])) + torch.relu(limit[2] - atom_weights.to(torch.float)))
                     penalties += penalty.detach().to('cpu')
                     loss += penalty
-                    # loss += z_reg_weight * torch.mean(z_bias**2)
+                    loss += z_reg_weight * torch.mean(z_bias**2)
                     loss.backward()
 
                 
@@ -591,9 +587,7 @@ if __name__ == "__main__":
         "--density_center",default=None,type=float,nargs=2
     )
     parser.add_argument(
-    "--train-deterministic",
-    action=argparse.BooleanOptionalAction,
-    default=True,
+        "--train_deterministic",action="store_true", default=False
     )
     parser.add_argument(
         "--device", default="cuda:0"
