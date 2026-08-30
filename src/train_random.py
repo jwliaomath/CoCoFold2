@@ -463,10 +463,10 @@ def main(args):
                         data=data[num_start:num_end].to(torch.float),
                         ctf=ctf[num_start:num_end].to(torch.float),
                         box_size=box_size,
-                        apix=float(args.apix),
                         max_freq=(2 * float(args.apix)) / target_resolution,
-                        shell_weight_freqs=shell_weight_freqs,
-                        shell_weights=shell_weights,
+                        # apix=float(args.apix),
+                        # shell_weight_freqs=shell_weight_freqs,
+                        # shell_weights=shell_weights,
                     ) / data.shape[0]
                     '''
                     proj_ft = torch.fft.fftshift(torch.fft.fft2(proj.to(torch.float)), dim=(-2, -1))
