@@ -1,6 +1,6 @@
 # CoCoFold2
 
-**CoCoFold2: Diffusion-enabled Experimental Latent Test-time Adaptation of Frozen Protein Structure Priors**
+**CoCoFold2: latent refinement of diffusion-based protein structure predictions using limited-particle cryo-EM data**
 
 CoCoFold2 is a deterministic experimental refinement framework that couples a frozen Protenix-style protein diffusion prior to cryo-EM particle observations. It fixes the diffusion sampling state and optimizes a target-specific latent bias, together with auxiliary Gaussian-rendering parameters, while keeping all pretrained network weights frozen.
 
@@ -25,6 +25,7 @@ flowchart LR
 - Optimizes a target-specific `z_bias` together with Gaussian-rendering atom weights and Gaussian widths (`sdevs`).
 - Writes epoch-wise coordinate models and PyTorch checkpoints for downstream inspection.
 - Supports both pre-RELION-3.1 and RELION 3.1+ STAR metadata layouts implemented by `ParticleDataset`.
+- Supports approximate component-parallel refinement across multiple GPUs, with one user-defined component group per rank and either independently generated or full-context-derived component caches.
 
 ## Current limitations
 
@@ -34,6 +35,7 @@ flowchart LR
 - The current release does not model conformational ensembles or continuous heterogeneity.
 - Memory use can be high and depends on target size, atom count, particle box size, diffusion settings and particle mini-batch size.
 - The current implementation uses 10 epochs, random seed 42 and fixed learning rates hard-coded in `train.py`.
+- Component-parallel refinement is an approximation rather than exact full-complex Protenix inference: component-local diffusion omits cross-component diffusion attention, and the contextual strategy still requires one full-complex Pairformer pass.
 
 ## Important scientific-use warning
 
@@ -74,6 +76,12 @@ bash examples/6zbh/run_refinement.sh
 
 Full instructions are provided in [Particle-guided CoCoFold2 refinement for 6ZBH](docs/particle_tutorial_6zbh.md). The required data fields are described in [Data requirements](docs/data_requirements.md).
 
+## Component-parallel refinement of larger assemblies
+
+The current component-parallel implementation assigns one complete-chain group to each distributed rank, combines differentiable component projections and evaluates one global particle-space loss. The number of ranks is determined by the number of component groups and is not fixed to two GPUs.
+
+See [Component-parallel CoCoFold2 refinement](docs/component_parallel_tutorial.md) for the Independent-component, Contextual-component and large-complex `z_trunk`-to-`pair_z` workflows.
+
 ## Inputs
 
 The particle workflow requires:
@@ -107,5 +115,4 @@ Large particle stacks, model weights and `.pth` caches should not be committed t
 ## Citation
 
 Citation metadata are provided in [`CITATION.cff`](CITATION.cff). Until the manuscript DOI is available, cite the repository and the CoCoFold2 manuscript using the placeholder information in that file.
-
 
