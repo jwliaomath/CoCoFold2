@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use CoCoFold2, please cite the CoCoFold2 manuscript and this software release."
-title: "CoCoFold2: Diffusion-enabled Experimental Latent Test-time Adaptation of Frozen Protein Structure Priors"
+title: "CoCoFold2: latent refinement of diffusion-based protein structure predictions using limited-particle cryo-EM data"
 type: software
 authors:
   - family-names: Liao
@@ -19,7 +19,7 @@ abstract: >-
   optimization.
 preferred-citation:
   type: article
-  title: "CoCoFold2: Diffusion-enabled Experimental Latent Test-time Adaptation of Frozen Protein Structure Priors"
+  title: "CoCoFold2: latent refinement of diffusion-based protein structure predictions using limited-particle cryo-EM data"
   authors:
     - family-names: Liao
       given-names: Junwen
