@@ -1,5 +1,6 @@
 [
   ".github/workflows/public-tests.yml",
+  ".github/workflows/website.yml",
   ".gitignore",
   "CITATION.cff",
   "LICENSE",
@@ -116,5 +117,16 @@
   "tests/test_gmm_peak2d_checkpoint.py",
   "tests/test_gmm_peak3d.py",
   "tools/build_public_release.py",
-  "tools/inspect_environment.py"
+  "tools/inspect_environment.py",
+  "website/README.md",
+  "website/build_site.py",
+  "website/check_site.py",
+  "website/requirements-site.txt",
+  "website/static/.nojekyll",
+  "website/static/docs.css",
+  "website/static/icon.svg",
+  "website/static/index.html",
+  "website/static/site.js",
+  "website/static/styles.css",
+  "website/templates/document.html"
 ]
