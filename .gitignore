@@ -154,3 +154,22 @@
 !/tests/test_gmm_peak3d.py
 !/tools/build_public_release.py
 !/tools/inspect_environment.py
+# Project website sources; generated HTML and local reports stay ignored.
+!/website/
+/website/*
+!/website/static/
+/website/static/*
+!/website/templates/
+/website/templates/*
+!/.github/workflows/website.yml
+!/website/README.md
+!/website/build_site.py
+!/website/check_site.py
+!/website/requirements-site.txt
+!/website/templates/document.html
+!/website/static/.nojekyll
+!/website/static/index.html
+!/website/static/styles.css
+!/website/static/docs.css
+!/website/static/site.js
+!/website/static/icon.svg

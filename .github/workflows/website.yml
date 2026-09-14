@@ -1,0 +1,53 @@
+name: Website
+on:
+  push:
+    branches: [main, website/initial-site]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: website/requirements-site.txt
+      - name: Install site dependencies
+        run: python -m pip install -r website/requirements-site.txt
+      - name: Build website from repository documentation
+        run: python website/build_site.py
+      - name: Check site links and source consistency
+        run: python website/check_site.py
+      - name: Retain build audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-build-audit
+          path: website/build-report.json
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: website/_site
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4
