@@ -1,13 +1,13 @@
-"""Proposed chain-parallel trainer that preserves CoCoFold2's 2-D GMM logic.
+"""Component-parallel refinement using the existing 2-D GMM projection sum.
 
-This is a new, standalone proposal.  It does not modify or import the previous
-3-D chain-parallel implementation.  Run it from the CoCoFold2 repository root
-with one component per torchrun rank.
+One component cache per torchrun rank; optional independent chain alignment,
+structured records and complete-epoch checkpoint sets.
 """
 
 from __future__ import annotations
 
 import argparse
+from datetime import timedelta
 import hashlib
 import json
 import math
@@ -59,11 +59,11 @@ sys.path.insert(0, str(PROPOSAL_DIR))
 sys.path.insert(0, str(COCOFOLD2_ROOT))
 
 from ctf import compute_ctf
+from gmm import GaussianProjector, add_gmm_arguments, gmm_from_arguments
 from distributed_gmm import (
     detached_sum,
     distributed_active,
-    distributed_pdb2img,
-    local_source_equivalent_penalty,
+    distributed_project_gaussians,
 )
 from manifest import ComponentEntry, component_for_rank, load_manifest
 from particledataset import ParticleDataset
@@ -75,6 +75,14 @@ from utils import (
     replace_cif_coordinates,
 )
 from utils_halfmap import build_halfmap_shell_weights
+from randomness import add_seed_arguments, seed_legacy, apply_seed_settings
+from run_recording import recorded, current_record, add_record_arguments
+from training_restart import RestartArgumentParser, restart_gmm
+from training_output import export_training_structure
+from cli_utils import positive_int, positive_float
+from coordinate_transform import CoordinateTransform
+from chain_parallel.parallel_runtime import phase, gather, seeds, preflight, validate_partition, fit_chains
+from chain_parallel.parallel_checkpoint import resume_index, validate_resume, restore_resume, save_epoch
 
 
 def _tree_to_device(value: Any, device: torch.device) -> Any:
@@ -101,6 +109,8 @@ def _state_dict_sha256(state_dict: dict[str, torch.Tensor]) -> str:
 
 
 def _setup_distributed(args: argparse.Namespace) -> tuple[int, int, torch.device]:
+    if dist.is_initialized():
+        return dist.get_rank(), dist.get_world_size(), torch.device(args.device)
     requested_world = int(os.environ.get("WORLD_SIZE", "1"))
     if requested_world > 1:
         if args.backend == "nccl":
@@ -111,7 +121,7 @@ def _setup_distributed(args: argparse.Namespace) -> tuple[int, int, torch.device
             device = torch.device("cuda", local_rank)
         else:
             device = torch.device("cpu")
-        dist.init_process_group(args.backend)
+        dist.init_process_group(args.backend, timeout=timedelta(seconds=args.distributed_timeout))
         return dist.get_rank(), dist.get_world_size(), device
 
     device = torch.device(args.device)
@@ -154,10 +164,12 @@ class LocalComponent:
         entry: ComponentEntry,
         device: torch.device,
         train_deterministic: bool,
+        gmm_options: argparse.Namespace | None = None,
+        raw=None,
     ) -> None:
         from protenix.model.modules.diffusion import DiffusionModule
 
-        raw = torch.load(entry.diffusion_data_dir, map_location="cpu", weights_only=False)
+        raw = raw if raw is not None else torch.load(entry.diffusion_data_dir, map_location="cpu", weights_only=False)
         self.entry = entry
         self.device = device
         contextual_metadata = raw.get("contextual_split_metadata")
@@ -182,7 +194,14 @@ class LocalComponent:
         self.configs.train_deterministic = bool(train_deterministic)
         # The source trainer used deterministic seed 42.  The workspace's
         # generator now exposes that old constant through this config field.
-        self.configs.train_seed = 42
+        self.seed_settings = seeds(gmm_options)
+        apply_seed_settings(self.configs, self.seed_settings)
+        self.configs.train_seed = self.seed_settings['diffusion_seed']
+        self.transform = None
+        self.update_threshold = gmm_options.block_update_trace_threshold
+        if gmm_options.warm_start:
+            from checkpoint_sampling import effective_latent
+            self.z_trunk, self.pair_z = effective_latent(raw, self.z_trunk, self.pair_z)
         self.enable_efficient_fusion = bool(raw["enable_efficient_fusion"])
 
         self.diffusion_module = DiffusionModule(
@@ -200,6 +219,8 @@ class LocalComponent:
             self.z_bias_target = "z_trunk"
             bias_template = self.z_trunk
         self.z_bias = torch.nn.Parameter(torch.zeros_like(bias_template))
+        if gmm_options.resume:
+            self.z_bias.data.copy_(raw['z_bias'].to(device))
 
         with torch.no_grad():
             initial_samples = self.sample(use_cached_inplace_safe=True)
@@ -212,17 +233,14 @@ class LocalComponent:
                 f"coordinates {tuple(initial_coordinates.shape)}"
             )
         self.reference_coordinates = reference_coordinates.to(device)
-        self.atom_weights = torch.nn.Parameter(
-            initial_atom_weights.detach().to(device=device, dtype=torch.float32)
-        )
-        self.sdevs = torch.nn.Parameter(
-            torch.full(
-                (self.atom_weights.numel(), 2),
-                3.0 / (math.pi * math.sqrt(2.0)),
-                device=device,
-                dtype=torch.float32,
-            )
-        )
+        initial_weights = initial_atom_weights.detach().to(device=device, dtype=torch.float32)
+        self.gmm = (GaussianProjector(initial_weights) if gmm_options is None
+                    else gmm_from_arguments(initial_weights, gmm_options))
+        if gmm_options.resume or gmm_options.warm_start:
+            self.gmm, source = restart_gmm(raw, gmm_options, initial_weights, device)
+            current_record().event('gmm_restart', source=source)
+        self.gmm.requires_grad_(gmm_options.learn_gmm)
+        self.atom_weights = self.gmm.atom_weights
         with torch.no_grad():
             _, rotation, translation = kabsch_alignment(
                 initial_coordinates,
@@ -231,6 +249,17 @@ class LocalComponent:
             )
         self.rotation = rotation
         self.translation = translation
+        if (gmm_options.resume or gmm_options.warm_start) and raw.get('rotation') is not None and raw.get('translation') is not None:
+            from checkpoint_sampling import global_coordinates
+            global_coordinates(raw, initial_coordinates)  # Validate dimensions and finite values.
+            self.rotation = raw['rotation'].to(device)
+            self.translation = raw['translation'].to(device)
+        if raw.get('coordinate_transform') is not None:
+            self.transform = CoordinateTransform.from_checkpoint(raw['coordinate_transform'], entry.cif_path, device)
+        elif entry.alignment_manifest:
+            self.transform = CoordinateTransform.fit_manifest(entry.alignment_manifest, initial_coordinates, entry.cif_path)
+        elif gmm_options.by_chain:
+            self.transform = fit_chains(entry.cif_path, initial_coordinates, gmm_options.fit_atoms)
         self.pred_dict["coordinate"] = initial_samples
 
     def sample(self, use_cached_inplace_safe: bool = False) -> torch.Tensor:
@@ -260,6 +289,12 @@ class LocalComponent:
     def place_coordinates(
         self, coordinates: torch.Tensor, update_affine_mat: bool
     ) -> torch.Tensor:
+        if self.transform is not None:
+            if update_affine_mat:
+                events = self.transform.update_from_coordinates(coordinates, self.update_threshold)
+                for event in events:
+                    current_record().event('alignment_update', component_id=self.entry.component_id, **event)
+            return self.transform(coordinates)
         if update_affine_mat:
             with torch.no_grad():
                 _, current_rotation, current_translation = kabsch_alignment(
@@ -275,6 +310,8 @@ class LocalComponent:
                     )
                     self.rotation = current_rotation
                     self.translation = current_translation
+                    current_record().event('alignment_update', component_id=self.entry.component_id,
+                        rotation=current_rotation.detach().cpu().tolist(), translation=current_translation.detach().cpu().tolist())
         return coordinates @ self.rotation.T + self.translation
 
 
@@ -286,7 +323,7 @@ def _particle_dataset(args: argparse.Namespace) -> ParticleDataset:
     )
     return ParticleDataset(
         str(args.star_data_dir),
-        str(args.mrc_data_dir),
+        args.mrc_data_dir,
         float(args.apix),
         transR=trans_r,
         norm=args.norm,
@@ -345,7 +382,7 @@ def _global_parameter_counts(
     component: LocalComponent, world_size: int
 ) -> tuple[int, int]:
     counts = torch.tensor(
-        [component.atom_weights.numel(), component.sdevs.numel()],
+        component.gmm.regularization_counts(),
         device=component.device,
         dtype=torch.long,
     )
@@ -364,12 +401,15 @@ def _validate_same_model(
         "n_atom": component.atom_weights.numel(),
         "z_bias_shape": list(component.z_bias.shape),
         "contextual_split_metadata": component.contextual_split_metadata,
+        "gmm_config": component.gmm.config(),
     }
     if world_size == 1:
         return [local]
     gathered: list[dict[str, Any] | None] = [None for _ in range(world_size)]
     dist.all_gather_object(gathered, local)
     result = [item for item in gathered if item is not None]
+    if len({json.dumps(item["gmm_config"], sort_keys=True) for item in result}) != 1:
+        raise ValueError("all components must use identical GMM modes and conventions")
     if len({item["model_state_sha256"] for item in result}) != 1:
         raise ValueError("component caches do not contain identical diffusion weights")
     contextual_flags = [item["contextual_split_metadata"] is not None for item in result]
@@ -390,59 +430,73 @@ def _validate_same_model(
 
 
 def train(args: argparse.Namespace) -> None:
-    entries = load_manifest(args.component_manifest)
+    prefix = os.path.expanduser(str(args.output_trained_model_dir))
+    trailing = prefix.endswith(('/', '\\'))
+    args.output_trained_model_dir = os.path.abspath(prefix) + (os.sep if trailing else '')
+    if args.check_inputs:
+        entries, index = resume_index(args, load_manifest(args.component_manifest))
+        for rank in range(len(entries)):
+            component_for_rank(entries, rank, len(entries))
+        reports = []
+        for entry in sorted(entries, key=lambda e:e.rank):
+            raw, dataset, report = preflight(args, entry)
+            reports.append(report)
+            del raw, dataset
+        validate_partition(reports)
+        print(json.dumps(dict(passed=True, components=len(reports), model_loaded=False)))
+        return
     rank, world_size, device = _setup_distributed(args)
-    entry = component_for_rank(entries, rank, world_size)
+    try:
+        entries, index = phase('manifest/resume', lambda: resume_index(args, load_manifest(args.component_manifest)))
+        entry = phase('rank assignment', lambda: component_for_rank(entries, rank, world_size))
+        if args.record_dir:
+            args.record_dir = str(Path(args.record_dir)/f'rank{rank}')
+        _train_initialized(args, entries, entry, device, index)
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
 
-    torch.manual_seed(42)
-    np.random.seed(42)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(42)
 
-    for required in (
-        entry.diffusion_data_dir,
-        entry.cif_path,
-        Path(args.star_data_dir),
-    ):
-        if not required.exists():
-            raise FileNotFoundError(required)
-
-    component = LocalComponent(entry, device, args.train_deterministic)
+@recorded('train')
+def _train_initialized(args, entries, entry, device, index):
+    rank, world_size = entry.rank, len(entries)
+    record = current_record()
+    raw, dataset, report = phase('input preflight', lambda: preflight(args, entry))
+    reports = gather(report)
+    phase('partition', lambda: validate_partition(reports))
+    phase('resume inputs', lambda: validate_resume(args, index, reports, raw, device))
+    settings = seeds(args)
+    from chain_parallel.parallel_checkpoint import SCIENCE
+    from run_recording import json_value
+    scientific = {key:json_value(getattr(args,key)) for key in SCIENCE if hasattr(args,key)}
+    configurations = gather(scientific)
+    if any(row != configurations[0] for row in configurations):
+        raise ValueError('Scientific settings/seeds differ across ranks')
+    seed_legacy(settings['seed'])
+    record.resolved('parallel_science', scientific, 'Saved configuration inherited for resume; original parallel defaults otherwise')
+    record.resolved('parallel_inputs', reports, 'All-rank CPU checks before model construction')
+    record.resolved('seeds', settings, 'Shared DataLoader generator; same diffusion seed on every component')
+    component = phase('model initialization', lambda: LocalComponent(entry, device, args.train_deterministic, args, raw))
     replica_metadata = _validate_same_model(component, world_size)
-    uses_contextual_diagonal_cache = all(
-        item["contextual_split_metadata"] is not None for item in replica_metadata
-    )
-    global_atom_count, global_sdev_count = _global_parameter_counts(
-        component, world_size
-    )
-
-    optimizer = torch.optim.AdamW([component.z_bias], lr=1e-2)
-    optimizer.add_param_group({"params": component.atom_weights, "lr": 1e-2})
-    optimizer.add_param_group({"params": component.sdevs, "lr": 5e-3})
-
-    output_prefix = Path(
-        f"{args.output_trained_model_dir}{entry.component_id}_rank{rank}_"
-    )
+    uses_contextual_diagonal_cache = all(item['contextual_split_metadata'] is not None for item in replica_metadata)
+    global_atom_count, global_sdev_count = _global_parameter_counts(component, world_size)
+    optimizer = torch.optim.AdamW([component.z_bias], lr=args.lr_bias)
+    if args.learn_gmm:
+        optimizer.add_param_group({'params': component.gmm.amplitude_parameters(), 'lr': args.lr_atom_weights})
+        optimizer.add_param_group({'params': component.gmm.shape_parameters(), 'lr': args.lr_sdevs})
+    output_prefix = Path(f'{args.output_trained_model_dir}{entry.component_id}_rank{rank}_')
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
-    initial_output = Path(f"{output_prefix}_.pdb")
-    if initial_output.exists():
-        raise FileExistsError(
-            f"refusing to overwrite an existing proposal run: {initial_output}"
-        )
-    replace_cif_coordinates(
-        input_cif=str(entry.cif_path),
-        output_cif=str(initial_output),
-        new_coords=component.pred_dict["coordinate"][0].detach().cpu().numpy(),
-    )
-
-    dataset = _particle_dataset(args)
-    loader_generator = torch.Generator().manual_seed(42)
-    data_loader = DataLoader(
-        dataset,
-        batch_size=int(args.batch_size),
-        shuffle=True,
-        generator=loader_generator,
-    )
+    def write_initial():
+        files = export_training_structure(entry.cif_path, f'{output_prefix}_',
+            component.pred_dict['coordinate'][0].detach().cpu().numpy(), args.output_format)
+        for item in files: record.artifact(item, 'raw_initial_structure')
+    phase('initial output', write_initial)
+    loader_generator = torch.Generator().manual_seed(settings['data_seed'])
+    data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, generator=loader_generator)
+    first_epoch, global_step = 0, 0
+    if args.resume:
+        first_epoch, global_step = phase('restore epoch', lambda: restore_resume(raw, component, optimizer, data_loader))
+    del raw
     box_size = int(args.boxsize)
     apix = float(args.apix)
     frequencies = _frequency_grid(box_size, apix)
@@ -481,6 +535,7 @@ def train(args: argparse.Namespace) -> None:
                         else "independent-component-2d-gmm-projection-sum"
                     ),
                     "source_logic": "train.py + pts2img.py + active utils.py::compute_frc",
+                    "gmm_config": component.gmm.config(),
                     "exact_full_complex_pairformer_equivalent": False,
                     "uses_full_complex_contextual_diagonal_cache": (
                         uses_contextual_diagonal_cache
@@ -494,13 +549,13 @@ def train(args: argparse.Namespace) -> None:
                     "apix": apix,
                     "resolution": float(args.resolution),
                     "map_resolution": target_resolution,
-                    "epochs": 10,
+                    "epochs": args.epochs,
                     "batch_size": int(args.batch_size),
                     "mini_batch_size": int(args.mini_batch_size),
                     "learning_rates": {
-                        "z_bias": 1e-2,
-                        "atom_weights": 1e-2,
-                        "sdevs": 5e-3,
+                        "z_bias": args.lr_bias,
+                        "atom_weights": args.lr_atom_weights,
+                        "sdevs": args.lr_sdevs,
                     },
                     "penalty_limits": [0.1, 0.8, 1.0, 20.0],
                     "peak_memory": "Not reported and not yet measured in this workspace.",
@@ -530,8 +585,12 @@ def train(args: argparse.Namespace) -> None:
     if rank_metrics_path.exists():
         raise FileExistsError(f"refusing to overwrite {rank_metrics_path}")
     last_placed_coordinates: torch.Tensor | None = None
-    for epoch in range(10):
-        for batch_number, batch in enumerate(data_loader):
+    stopped = False
+    for epoch in range(first_epoch, args.epochs):
+        iterator = iter(data_loader)
+        completed = False
+        for batch_number in range(len(data_loader)):
+            batch = phase('read particle batch', lambda: next(iterator))
             if device.type == "cuda":
                 torch.cuda.synchronize(device)
                 torch.cuda.reset_peak_memory_stats(device)
@@ -549,17 +608,14 @@ def train(args: argparse.Namespace) -> None:
                 end_index = min(
                     start_index + int(args.mini_batch_size), data.shape[0]
                 )
-                coordinate_samples = component.sample()
+                coordinate_samples = phase("decode", component.sample)
                 coordinates = coordinate_samples[0]
                 component.pred_dict["coordinate"] = coordinate_samples
-                placed_coordinates = component.place_coordinates(
-                    coordinates, args.update_affine_mat
-                )
+                placed_coordinates = phase("placement", lambda: component.place_coordinates(coordinates, args.update_affine_mat))
                 last_placed_coordinates = placed_coordinates
-                projection = distributed_pdb2img(
+                projection = distributed_project_gaussians(
+                    projector=component.gmm,
                     atom_coordinates=placed_coordinates,
-                    atom_weights=component.atom_weights,
-                    sdevs=component.sdevs,
                     rotations=rotations[start_index:end_index],
                     translations=translations[start_index:end_index],
                     density_center=density_center,
@@ -577,11 +633,9 @@ def train(args: argparse.Namespace) -> None:
                     box_size=box_size,
                     max_freq=(2.0 * apix) / target_resolution,
                 ) / data.shape[0]
-                local_penalty = local_source_equivalent_penalty(
-                    atom_weights=component.atom_weights,
-                    sdevs=component.sdevs,
+                local_penalty = component.gmm.regularization(
                     global_atom_count=global_atom_count,
-                    global_sdev_count=global_sdev_count,
+                    global_width_count=global_sdev_count,
                     limits=(0.1, 0.8, 1.0, 20.0),
                 )
                 # The particle objective is duplicated on all ranks.  Dividing
@@ -589,13 +643,18 @@ def train(args: argparse.Namespace) -> None:
                 # penalty is already this rank's contribution to the original
                 # full-complex means and therefore is not divided by P.
                 loss = loss_frc / world_size + local_penalty
+                phase('finite loss', lambda: _require_finite(loss, 'loss'))
                 loss.backward()
 
                 losses += loss_frc.detach().cpu()
                 penalties += detached_sum(local_penalty).cpu()
 
+            phase('finite gradients', lambda: [_require_finite(p.grad, 'gradient') for group in optimizer.param_groups for p in group['params'] if p.grad is not None])
             optimizer.step()
+            phase('finite parameters', lambda: [_require_finite(p, 'parameter') for group in optimizer.param_groups for p in group['params']])
             optimizer.zero_grad()
+            global_step += 1
+            completed = batch_number + 1 == len(data_loader)
             if device.type == "cuda":
                 torch.cuda.synchronize(device)
                 peak_memory_mb = torch.cuda.max_memory_allocated(device) / 1024**2
@@ -619,6 +678,10 @@ def train(args: argparse.Namespace) -> None:
                 "batch_time_seconds": elapsed,
                 "communication_time_seconds": "Not reported and not yet measured in this workspace.",
             }
+            record.event('train_step', global_step=global_step, epoch=epoch, batch=batch_number,
+                component_id=entry.component_id, particle_indices=indices.tolist(),
+                total_loss=float(losses+penalties), elapsed_seconds=elapsed,
+                gmm_learning=args.learn_gmm, peak_memory_mb=peak_memory_mb)
             with rank_metrics_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(local_row) + "\n")
 
@@ -638,82 +701,73 @@ def train(args: argparse.Namespace) -> None:
                     handle.write(json.dumps(row) + "\n")
                 print(json.dumps(row), flush=True)
 
+            if args.max_steps is not None and global_step >= args.max_steps:
+                stopped = True
+                break
         if last_placed_coordinates is None:
-            raise RuntimeError("particle DataLoader produced no batches")
-        model_path = Path(f"{output_prefix}{epoch + 1}.pth")
-        model_data = {
-            "model_state": component.diffusion_module.state_dict(),
-            "opt_state": optimizer.state_dict(),
-            "atom_weights": component.atom_weights,
-            "sdevs": component.sdevs,
-            "pred_dict": component.pred_dict,
-            "input_feature_dict": component.input_feature_dict,
-            "s_inputs": component.s_inputs,
-            "s_trunk": component.s_trunk,
-            "z_trunk": component.z_trunk,
-            "pair_z": component.pair_z,
-            "p_lm": component.p_lm,
-            "c_l": component.c_l,
-            "N_sample": component.n_sample,
-            "noise_schedule": component.noise_schedule,
-            "inplace_safe": component.inplace_safe,
-            "configs": component.configs,
-            "s_inputs_bias": None,
-            "s_bias": None,
-            "z_bias": component.z_bias,
-            "z_mul": None,
-            "component_id": entry.component_id,
-            "rotation": component.rotation,
-            "translation": component.translation,
-            "contextual_split_metadata": component.contextual_split_metadata,
-        }
-        torch.save(deep_clone(model_data), model_path)
-        replace_cif_coordinates(
-            input_cif=str(entry.cif_path),
-            output_cif=f"{output_prefix}{epoch + 1}.pdb",
-            new_coords=last_placed_coordinates.detach().cpu().numpy(),
-        )
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
-        if distributed_active():
-            dist.barrier()
+            raise RuntimeError('Particle DataLoader produced no batches')
+        save_epoch(args, component, optimizer, data_loader, reports, epoch, global_step, completed, output_prefix)
+        if device.type == 'cuda': torch.cuda.empty_cache()
+        if stopped: break
 
-    if distributed_active():
-        dist.destroy_process_group()
+
+def _require_finite(value, label):
+    if not torch.isfinite(value).all():
+        raise ValueError(f'Nonfinite {label}; no exception checkpoint will be saved')
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--component_manifest", required=True)
-    parser.add_argument("--star_data_dir", required=True)
-    parser.add_argument("--mrc_data_dir", required=True)
-    parser.add_argument("--output_trained_model_dir", required=True)
-    parser.add_argument("--transR", action="store_true", default=False)
-    parser.add_argument("--particle_sign", default=-1.0, type=float)
-    parser.add_argument("--boxsize", default=256, type=int)
-    parser.add_argument("--apix", default=1.0, type=float)
-    parser.add_argument("--norm", action="store_true", default=False)
-    parser.add_argument("--resolution", default=3.0, type=float)
-    parser.add_argument("--density_center", default=None, type=float, nargs=2)
+    parser = RestartArgumentParser(description="One component cache per rank; component-wide or per-chain rigid placement.")
+    parser.add_argument("--component_manifest", required=True, help='YAML assigning one component cache/reference CIF per rank; embedded paths are relative to the manifest. Default: %(default)s.')
+    parser.add_argument("--star_data_dir", required=True, help='RELION STAR file containing particle image references, poses and CTF metadata. Default: %(default)s.')
+    parser.add_argument("--mrc_data_dir", default=None, help='Root for relative STAR image paths; omitted means the STAR directory. Absolute image paths are used directly. Default: %(default)s.')
+    parser.add_argument("--output_trained_model_dir", required=True, help='Output filename prefix; a trailing slash selects a directory. Use a new run location. Default: %(default)s.')
+    parser.add_argument("--transR", action="store_true", default=False, help='Use the validated pose-convention matrix diag(1,1,-1); enable only for the matching upstream orientation convention. Default: %(default)s.')
+    parser.add_argument("--particle_sign", default=-1.0, type=float, help='Multiplier applied to rendered particle projections; keep the validated data sign convention. Default: %(default)s.')
+    parser.add_argument("--boxsize", default=256, type=int, help='Square particle image width/height in pixels; must match STAR/MRCS inputs. Default: %(default)s.')
+    parser.add_argument("--apix", default=1.0, type=float, help='Experimental pixel size in Angstrom per pixel; must be positive. Default: %(default)s.')
+    parser.add_argument("--norm", action="store_true", default=False, help='Min-max normalize each observed particle to [0,1]; constant images are rejected. Default: %(default)s.')
+    parser.add_argument("--resolution", default=3.0, type=float, help='GMM rendering resolution parameter in Angstrom; distinct from the FRC cutoff. Default: %(default)s.')
+    parser.add_argument("--density_center", default=None, type=float, nargs=2, help='Two image-center coordinates in pixels; omitted uses the box center. Default: %(default)s.')
     parser.add_argument(
         "--train_deterministic",
         action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--backend", choices=("nccl", "gloo"), default="nccl")
-    parser.add_argument("--batch_size", default=32, type=int)
-    parser.add_argument("--mini_batch_size", default=12, type=int)
-    parser.add_argument("--update_affine_mat", action="store_true", default=False)
-    parser.add_argument("--map_resolution", default=5.0, type=float)
-    parser.add_argument("--halfmap1", default=None)
-    parser.add_argument("--halfmap2", default=None)
-    parser.add_argument("--fsc_gamma", default=1.0, type=float)
-    parser.add_argument("--fsc_smooth_win", default=0, type=int)
+        default=True, help='Reuse fixed diffusion stochasticity; disabling resamples noise. Per-chain placement requires fixed stochasticity. Default: %(default)s.')
+    parser.add_argument("--device", default="cuda:0", help='PyTorch device for this operation; distributed CUDA ranks use LOCAL_RANK. Default: %(default)s.')
+    parser.add_argument("--backend", choices=("nccl", "gloo"), default="nccl", help='Distributed communication backend: NCCL for CUDA training, Gloo for CPU tests. Default: %(default)s.')
+    parser.add_argument("--batch_size", default=32, type=int, help='Particles per optimizer update; all parallel ranks process the same batch. Default: %(default)s.')
+    parser.add_argument("--mini_batch_size", default=12, type=int, help='Particles per loss/backward microbatch inside each update; smaller values trade memory for more decoding. Default: %(default)s.')
+    parser.add_argument("--update_affine_mat", action="store_true", default=False, help='Enable the existing rigid-transform update safeguard; per-chain mode tests the shared threshold independently per chain. Default: %(default)s.')
+    parser.add_argument("--map_resolution", default=5.0, type=float, help='Angstrom resolution cutoff of the active particle FRC objective; not the GMM rendering width. Default: %(default)s.')
+    parser.add_argument("--halfmap1", default=None, help='Optional first half-map file, paired with halfmap2. Weights are prepared but not consumed by the current active FRC loss. Default: %(default)s.')
+    parser.add_argument("--halfmap2", default=None, help='Optional second half-map file, paired with halfmap1; current active FRC does not consume the prepared weights. Default: %(default)s.')
+    parser.add_argument("--fsc_gamma", default=1.0, type=float, help='Exponent for optional half-map weights; these weights currently do not alter the active FRC objective. Default: %(default)s.')
+    parser.add_argument("--fsc_smooth_win", default=0, type=int, help='Nonnegative smoothing window for optional half-map weights; zero disables smoothing. Default: %(default)s.')
+    parser.add_argument('--epochs', type=positive_int, default=10, help='Total target epochs, including resumed epochs.')
+    parser.add_argument('--max_steps', type=positive_int, default=None, help='Stop after this cumulative optimizer step; partial epoch is warm-start only.')
+    parser.add_argument('--lr_bias', type=positive_float, default=.01, help='AdamW learning rate for the target-specific latent perturbation. Default: %(default)s.')
+    parser.add_argument('--lr_atom_weights', type=positive_float, default=.01, help='AdamW learning rate for GMM amplitudes; unused when GMM learning is disabled. Default: %(default)s.')
+    parser.add_argument('--lr_sdevs', type=positive_float, default=.005, help='AdamW learning rate for GMM widths/shape parameters; unused when GMM learning is disabled. Default: %(default)s.')
+    parser.add_argument('--learn-gmm', action=argparse.BooleanOptionalAction, default=True, help='Learn both GMM amplitudes and widths; --no-learn-gmm freezes both without blocking coordinate gradients. Default: %(default)s.')
+    parser.add_argument('--output-format', choices=('cif','pdb','both'), default='cif', help='CIF always retained for merged output; pdb also writes PDB.')
+    parser.add_argument('--by-chain', action='store_true', help='Each local CIF author chain fits independently within the same component decoder.')
+    parser.add_argument('--fit-atoms', choices=('ca','all'), default='ca', help='Rigid-fitting core within each local chain: ca uses C-alpha, all uses all atoms; all atoms remain in the output. Default: %(default)s.')
+    parser.add_argument('--block-update-trace-threshold', type=float, default=2.5, help='Common rotation trace threshold (-1,3) for independent per-chain affine updates. Default: %(default)s.')
+    parser.add_argument('--check-inputs', action='store_true', help='Check all component inputs on CPU without constructing models.')
+    parser.add_argument('--distributed-timeout', type=positive_int, default=120, help='Collective timeout in seconds; torchrun terminates peers on worker failure.')
+    group=parser.add_mutually_exclusive_group()
+    group.add_argument('--resume', help='Complete epoch JSON index; fixed grouping/world size and inherited science settings.')
+    group.add_argument('--warm-start', action='store_true', help='Component manifest points to old/new refinement checkpoints; reset optimizer/progress.')
+    add_seed_arguments(parser, 'train')
+    add_record_arguments(parser)
+    add_gmm_arguments(parser)
     return parser
 
 
 if __name__ == "__main__":
     parsed_args = build_parser().parse_args()
+    parsed_args.original_argv = list(sys.argv)
+    if parsed_args.distributed_timeout <= 0:
+        raise ValueError('--distributed-timeout must be positive')
     print(parsed_args, flush=True)
     train(parsed_args)

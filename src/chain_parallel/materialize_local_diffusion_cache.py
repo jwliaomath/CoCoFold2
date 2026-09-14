@@ -276,12 +276,12 @@ def build_parser() -> argparse.ArgumentParser:
             "shared pair_z/p_lm/c_l cache"
         )
     )
-    parser.add_argument("--input-cache", required=True)
-    parser.add_argument("--output-cache", required=True)
-    parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--report-json")
-    parser.add_argument("--chunk-elements", type=int, default=1_000_000)
-    parser.add_argument("--overwrite", action="store_true", default=False)
+    parser.add_argument("--input-cache", required=True, help='Input component cache containing local z_trunk; not modified. Default: %(default)s.')
+    parser.add_argument("--output-cache", required=True, help='Destination cache with materialized pair_z, p_lm and c_l; refuses overwrite unless explicitly allowed. Default: %(default)s.')
+    parser.add_argument("--device", default="cuda:0", help='PyTorch device for this operation; distributed CUDA ranks use LOCAL_RANK. Default: %(default)s.')
+    parser.add_argument("--report-json", help='Optional JSON report path, resolved from the working directory. Default: %(default)s.')
+    parser.add_argument("--chunk-elements", type=int, default=1_000_000, help='Number of tensor elements per chunk in numerical comparison/reporting. Default: %(default)s.')
+    parser.add_argument("--overwrite", action="store_true", default=False, help='Allow replacing existing prepared cache outputs; disabled unless explicitly supplied. Default: %(default)s.')
     return parser
 
 

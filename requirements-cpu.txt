@@ -1,0 +1,20 @@
+# CPU test environment only; install torch==2.7.1 from the CPU index first.
+# This does not install Protenix or validate model inference/refinement.
+torch==2.7.1
+numpy==2.4.1
+scipy==1.17.0
+pandas==2.3.1
+matplotlib==3.10.5
+mrcfile==1.5.4
+gemmi==0.6.7
+starfile==0.4.12
+biopython==1.85
+biotite==1.4.0
+ml-collections==1.1.0
+einops==0.8.2
+PyYAML==6.0.2
+tqdm==4.67.1
+loguru==0.7.3
+# starfile 0.4.12 imports pkg_resources.
+setuptools==80.10.2
+pytest>=7,<10

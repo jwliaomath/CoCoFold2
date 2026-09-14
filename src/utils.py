@@ -9,7 +9,7 @@ def mrcread(fpath : str, iSlc = None):
     with mrcfile.mmap(fpath, permissive = True, mode = 'r') as mrc:
         data = mrc.data if iSlc is None or mrc.data.ndim == 2 else mrc.data[iSlc]
         return np.array(data, dtype = np.float64)
-    
+
 def cif_to_tensor(cif_path: str) -> tuple[torch.Tensor, torch.Tensor]:
 
     element_to_z = {
@@ -28,13 +28,13 @@ def cif_to_tensor(cif_path: str) -> tuple[torch.Tensor, torch.Tensor]:
     try:
         doc = gemmi.cif.read_file(cif_path)
         block = doc.sole_block()
-        
+
         table = block.find(desired_tags)
         if not table:
             raise ValueError("missing required tags")
-            
+
         col_map = {tag: i for i, tag in enumerate(table.tags)}
-        
+
         coords = []
         atomic_numbers = []
 
@@ -48,7 +48,7 @@ def cif_to_tensor(cif_path: str) -> tuple[torch.Tensor, torch.Tensor]:
                 print(f"missing element")
                 raise
             atomic_numbers.append(element_to_z[elem])
-            
+
 
             coords.append([
                 float(row[col_map["_atom_site.Cartn_x"]]),
@@ -66,8 +66,7 @@ def cif_to_tensor(cif_path: str) -> tuple[torch.Tensor, torch.Tensor]:
         raise
 
 
-
-def kabsch_alignment(pred_coords: torch.Tensor, 
+def kabsch_alignment(pred_coords: torch.Tensor,
                      ref_coords: torch.Tensor,
                      return_transform: bool = False
                     ) -> torch.Tensor | tuple:
@@ -93,7 +92,7 @@ def kabsch_alignment(pred_coords: torch.Tensor,
     # Input validation
     assert pred_coords.shape == ref_coords.shape, "Coordinate shape mismatch"
     assert pred_coords.dim() == 2 and pred_coords.size(1) == 3, "Expected [N, 3] shape"
-    
+
     device = pred_coords.device
     pred_coords = pred_coords.float()
     ref_coords = ref_coords.to(device).float()
@@ -101,22 +100,13 @@ def kabsch_alignment(pred_coords: torch.Tensor,
     # 1. Centroid alignment (remove translation)
     pred_centroid = pred_coords.mean(dim=0, keepdim=True)
     ref_centroid = ref_coords.mean(dim=0, keepdim=True)
-    
+
     centered_pred = pred_coords - pred_centroid  # Centered predictions
     centered_ref = ref_coords - ref_centroid     # Centered reference
 
     # 2. Covariance matrix for optimal rotation
     cov = centered_pred.T @ centered_ref  # [3, 3] covariance matrix
 
-    '''
-    # 3. Singular Value Decomposition (SVD)
-    U, S, Vt = torch.linalg.svd(cov.float())
-
-    # 4. Compute optimal rotation matrix
-    d = torch.sign(torch.det(Vt.T @ U.T))  # Ensure right-handed system
-    rotation = Vt.T @ U.T
-    rotation[:, -1] *= d  # Correct reflection if needed
-    '''
     U, S, Vt = torch.linalg.svd(cov.float())
     D = torch.diag(torch.tensor([1., 1., torch.sign(torch.det(Vt.T @ U.T))], device=device))
     rotation = Vt.T @ D @ U.T
@@ -132,107 +122,6 @@ def kabsch_alignment(pred_coords: torch.Tensor,
         return aligned_coords.to(device), rotation.to(device), translation.to(device)
     else:
         return aligned_coords.to(device)
-''' 
-def compute_frc(
-    proj: torch.Tensor,
-    data: torch.Tensor,
-    ctf: torch.Tensor = None,
-    box_size: int = 256,
-    apix: float = 1.0,
-    max_freq: float = 1.0,
-    shell_weight_freqs: torch.Tensor = None,
-    shell_weights: torch.Tensor = None,
-    return_shell_frc: bool = False,
-    eps: float = 1e-8,
-):
-    """
-    计算 2D FRC，并支持按物理频率插值的 shell-wise 加权。
-
-    参数:
-      proj, data: [B, 1, H, W]
-      ctf       : [B, 1, H, W] or None
-      apix      : Å/pixel
-      max_freq  : 相对 Nyquist 的比例，1.0 表示到 Nyquist
-      shell_weight_freqs : 3D FSC 曲线对应的频率中心 (1/Å)
-      shell_weights      : 对应权重
-      return_shell_frc   : 若 True，返回 (weighted_frc, frc_shell, weights_used, ring_freqs)
-
-    返回:
-      scalar FRC，或附加 shell 信息
-    """
-    device = proj.device
-    dtype = proj.dtype
-
-    proj_ft = torch.fft.fftshift(torch.fft.fft2(proj), dim=(-2, -1))
-    data_ft = torch.fft.fftshift(torch.fft.fft2(data), dim=(-2, -1))
-
-    if ctf is not None:
-        proj_ft = proj_ft * ctf
-
-    yy, xx = torch.meshgrid(
-        torch.arange(box_size, device=device),
-        torch.arange(box_size, device=device),
-        indexing="ij",
-    )
-    center = box_size // 2
-    rr_pix = torch.sqrt((yy - center).float() ** 2 + (xx - center).float() ** 2)
-
-    max_radius = int((box_size // 2) * max_freq)
-    max_radius = max(1, min(max_radius, box_size // 2))
-
-    frc_shell = []
-    ring_freqs = []
-
-    # 物理频率步长 (1/Å)
-    df = 1.0 / (box_size * float(apix))
-
-    for r in range(1, max_radius + 1):
-        mask = (rr_pix >= (r - 0.5)) & (rr_pix < (r + 0.5))
-        if not torch.any(mask):
-            frc_shell.append(torch.tensor(0.0, device=device, dtype=dtype))
-            ring_freqs.append(r * df)
-            continue
-
-        p = proj_ft[..., mask]   # [B,1,Npix]
-        d = data_ft[..., mask]
-
-        num = torch.real(torch.sum(p * torch.conj(d), dim=-1))  # [B,1]
-        den = torch.sqrt(
-            torch.sum(torch.abs(p) ** 2, dim=-1) *
-            torch.sum(torch.abs(d) ** 2, dim=-1) + eps
-        )
-
-        frc_r = num / (den + eps)   # [B,1]
-        frc_shell.append(frc_r.mean())
-        ring_freqs.append(r * df)
-
-    frc_shell = torch.stack(frc_shell, dim=0)              # [K]
-    ring_freqs = torch.tensor(ring_freqs, device=device, dtype=dtype)  # [K]
-
-    # 关键：按频率插值 3D FSC 权重 -> 2D FRC ring
-    weights_used = interpolate_weights_by_frequency(
-        src_freqs=shell_weight_freqs,
-        src_weights=shell_weights,
-        tgt_freqs=ring_freqs,
-        device=device,
-        dtype=dtype,
-    )
-
-    weights_used = torch.clamp(weights_used, min=0.0)
-
-    valid = torch.isfinite(frc_shell) & torch.isfinite(weights_used)
-    if not torch.any(valid):
-        weighted_frc = frc_shell.mean()
-    else:
-        weighted_frc = torch.sum(frc_shell[valid] * weights_used[valid]) / (
-            torch.sum(weights_used[valid]) + eps
-        )
-
-    if return_shell_frc:
-        return weighted_frc, frc_shell, weights_used, ring_freqs
-    return weighted_frc
-
-''' 
 def compute_frc(proj, data, ctf, box_size = 240, max_freq=1):
     N = proj.shape[0]
 
@@ -245,7 +134,7 @@ def compute_frc(proj, data, ctf, box_size = 240, max_freq=1):
     ny = box_size
     nx = box_size
     y, x = torch.meshgrid(torch.arange(-ny // 2, ny // 2,device=proj.device), torch.arange(-nx // 2, nx // 2,device=proj.device))
-    
+
     freq_radius = torch.sqrt(x ** 2 + y ** 2).long()
     freq_radius = freq_radius.unsqueeze(0).unsqueeze(0).expand(N,1,box_size,box_size)
     # Number of frequency bins
@@ -282,46 +171,46 @@ def replace_cif_coordinates(
     coord_type: str = "cartesian"
 ) -> None:
     """
-    替换CIF文件中的原子坐标（支持分数/笛卡尔坐标自动转换）
+    Replace template atomic coordinates; this legacy helper writes PDB output.
 
     Args:
-        input_cif: 输入CIF文件路径
-        output_cif: 输出CIF文件路径
-        new_coords: 新坐标数组 [N_atoms, 3]
-        coord_type: 坐标类型 ('cartesian' 或 'fractional')
+        input_cif: Input CIF template path.
+        output_cif: Output path (legacy PDB writer).
+        new_coords: New coordinates with shape [N_atoms, 3].
+        coord_type: Coordinate type ('cartesian' or 'fractional').
 
     Raises:
-        ValueError: 原子数量不匹配或坐标类型错误
+        ValueError: Atom count mismatch or unsupported coordinate type.
     """
-    # 读取CIF结构
+    # Read the CIF structure.
     struct = gemmi.read_structure(input_cif)
-    
-    # 获取所有原子并验证数量
+
+    # Collect all atoms and validate their count.
     all_atoms = [atom for model in struct for chain in model for residue in chain for atom in residue]
     if len(all_atoms) != new_coords.shape[0]:
-        raise ValueError(f"原子数量不匹配: CIF文件 {len(all_atoms)}, 新坐标 {new_coords.shape[0]}")
+        raise ValueError(f"Atom count mismatch: CIF contains {len(all_atoms)}, new coordinates contain {new_coords.shape[0]}")
 
-    # 获取晶胞参数和空间群信息
+    # Read the unit-cell parameters.
     cell = struct.cell
 
-    # 遍历原子替换坐标
+    # Replace coordinates for each atom.
     for i, atom in enumerate(all_atoms):
         x, y, z = new_coords[i]
 
-        # 处理坐标转换
+        # Handle the requested coordinate convention.
         if coord_type == "cartesian":
-            # 笛卡尔坐标 → 分数坐标（需要晶胞参数）
+            # Historical Cartesian-to-fractional conversion (inactive).
             # frac_pos = cell.fractionalize(gemmi.Position(x, y, z))
             # atom.pos = frac_pos
             atom.pos = gemmi.Position(x, y, z)
         elif coord_type == "fractional":
-            # 分数坐标 → 笛卡尔坐标
+            # Convert fractional coordinates to Cartesian coordinates.
             cart_pos = cell.orthogonalize(gemmi.Fractional(x, y, z))
             atom.pos = cart_pos
         else:
-            raise ValueError(f"无效的坐标类型: {coord_type}，可选 'cartesian' 或 'fractional'")
+            raise ValueError(f"Invalid coordinate type: {coord_type}; expected 'cartesian' or 'fractional'")
 
-    # 写入文件
+    # Write the output file.
     struct.write_minimal_pdb(output_cif)
 
 def replace_cif_coordinates_cif(
@@ -345,7 +234,7 @@ def replace_cif_coordinates_cif(
 
     if len(all_atoms) != new_coords.shape[0]:
         raise ValueError(
-            f"原子数量不匹配: CIF文件 {len(all_atoms)}, 新坐标 {new_coords.shape[0]}"
+            f"Atom count mismatch: CIF contains {len(all_atoms)}, new coordinates contain {new_coords.shape[0]}"
         )
 
     cell = struct.cell
@@ -362,10 +251,10 @@ def replace_cif_coordinates_cif(
 
         else:
             raise ValueError(
-                f"无效的坐标类型: {coord_type}，可选 'cartesian' 或 'fractional'"
+                f"Invalid coordinate type: {coord_type}; expected 'cartesian' or 'fractional'"
             )
 
-    # 关键：写出真正 mmCIF，而不是 PDB
+    # Write mmCIF content with the mmCIF writer.
     doc = struct.make_mmcif_document()
     doc.write_file(output_cif)
 
@@ -378,7 +267,7 @@ def deep_clone(obj):
         return type(obj)(deep_clone(item) for item in obj)
     else:
         return obj
-    
+
 def compute_frc_simulate(proj, data, box_size = 240, max_freq=1):
     N = proj.shape[0]
 
@@ -390,7 +279,7 @@ def compute_frc_simulate(proj, data, box_size = 240, max_freq=1):
     ny = box_size
     nx = box_size
     y, x = torch.meshgrid(torch.arange(-ny // 2, ny // 2), torch.arange(-nx // 2, nx // 2))
-    
+
     freq_radius = torch.sqrt(x ** 2 + y ** 2).long()
     freq_radius = freq_radius.unsqueeze(0).unsqueeze(0).expand(N,1,box_size,box_size)
     # Number of frequency bins
@@ -425,7 +314,7 @@ def discrete_radon_transform_3d(volume, rotation):
     volume = volume.expand(rotation.shape[0],1,volume.shape[-3],volume.shape[-2],volume.shape[-1])
 
     b = volume.shape[0]
-    
+
     zeros = torch.zeros(b, 3, 1).to(volume.device)
 
     theta = torch.cat([rotation, zeros], dim=2)
@@ -437,7 +326,7 @@ def discrete_radon_transform_3d(volume, rotation):
     # volume_rot = volume_rot.permute(0, 1, 2, 3, 4)
     volume_rot = volume_rot.permute(0, 1, 3, 4, 2)
     proj = volume_rot.sum(dim=-1)
-    
+
     return proj
 
 def translation_2d(proj, trans):
@@ -446,9 +335,9 @@ def translation_2d(proj, trans):
         proj: Bx1xbsxbs tensor 
         trans: Bx2 tensor
     """
-    
+
     b = trans.shape[0]
-    
+
     eye = torch.eye(2).unsqueeze(0).repeat(b, 1, 1).to(proj.device)
     trans = trans.unsqueeze(-1)
     trans = trans * 2 / proj.shape[-1]
@@ -456,31 +345,31 @@ def translation_2d(proj, trans):
 
     grid = F.affine_grid(theta, size=proj.shape)
     proj_trans = F.grid_sample(proj, grid, mode='bicubic')
-    
+
     return proj_trans
 
 def compute_ncc_loss(proj, data):
     """
-    计算实空间归一化互相关 (Normalized Cross-Correlation)
-    返回负相关系数，用于梯度下降 (越相关，loss越负)
+    Compute real-space normalized cross-correlation (NCC).
+    Return negative correlation for minimization (higher correlation gives lower loss).
     """
     B = proj.shape[0]
-    # 展平图像
+    # Flatten the images.
     p = proj.view(B, -1)
     d = data.view(B, -1)
-    
-    # 减去均值 (中心化)
+
+    # Subtract the mean to center each image.
     p_mean = p.mean(dim=1, keepdim=True)
     d_mean = d.mean(dim=1, keepdim=True)
     p_centered = p - p_mean
     d_centered = d - d_mean
-    
-    # 计算协方差与标准差
+
+    # Compute covariance and standard deviations.
     numerator = torch.sum(p_centered * d_centered, dim=1)
     denominator = torch.sqrt(torch.sum(p_centered ** 2, dim=1) * torch.sum(d_centered ** 2, dim=1) + 1e-8)
-    
-    # 计算 NCC 并求和
+
+    # Compute NCC and sum the correlations.
     ncc = numerator / denominator
-    
-    # 返回负的平均值，匹配你的 loss 形式
+
+    # Return the negative mean correlation as the loss.
     return -torch.sum(ncc)

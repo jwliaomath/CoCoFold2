@@ -14,7 +14,7 @@ This tutorial walks through a research-scale CoCoFold2 particle-refinement case.
 | Pixel size | 1.073 Å/pixel |
 | Frequency cutoff setting | 2.146 Å |
 
-CoCoFold2 requires upstream particle poses and CTF parameters and does not estimate them. The Protenix network weights remain frozen. The current implementation optimizes `z_bias`, Gaussian-rendering atom weights and Gaussian widths for 10 epochs with random seed 42.
+CoCoFold2 requires upstream particle poses and CTF parameters and does not estimate them. The Protenix network weights remain frozen. The current implementation optimizes `z_bias`, Gaussian-rendering atom weights and Gaussian widths by default. Epoch count and seeds are configurable; the historical defaults remain 10 and 42. For a smaller first run, use the [7ZDT/7ZD5 example](../examples/7zdt_7zd5/README.md).
 
 ## Stage A — Repository and environment
 
@@ -28,7 +28,7 @@ conda activate cocofold2
 
 The repository is executed directly from its root. Do not use `pip install -e .` because this release has no CoCoFold2 package definition.
 
-Ensure that the compatible Protenix 1.0.2 checkpoint and common-data resources are available in:
+Set `PROTENIX_ROOT_DIR` before starting Python to a directory containing the compatible Protenix 1.0.2 resources (see [installation](installation.md)):
 
 ```text
 checkpoint/
@@ -60,9 +60,9 @@ Download and prepare the public data using:
 wget -nH -m ftp://ftp.ebi.ac.uk/empiar/world_availability/10437/data/particles/MSP1_altconf5/
 ```
 
-Verify that `rlnImageName` paths in `366.star` resolve when prefixed with `data/6zbh/particles/`. The particle-root path must end in `/` because the current loader concatenates strings directly.
+Verify that `rlnImageName` paths in `366.star` resolve when prefixed with `data/6zbh/particles/`. Absolute STAR image paths are used directly. Relative paths resolve under `--mrc_data_dir`, or under the STAR directory when that option is omitted; no trailing slash is required.
 
-We only need a few of particles to run the refinement same as the Step 2 in [CoCoFold](https://github.com/jwliaomath/CoCoFold).
+Choose and record the particle subset for your experiment; the filename does not encode its row count.
 
 ## Stage C — Frozen Protenix inference and cache generation
 
@@ -70,13 +70,14 @@ Run this command from the CoCoFold2 repository root:
 
 ```bash
 python -u src/inference.py \
+  --resource-root "$PROTENIX_ROOT_DIR" \
   --input_json_path data/6zbh/input/6zbh.json \
   --sample_name 6zbh \
   --output_model_dir params/ \
   --dump_dir outputs/protenix_6zbh
 ```
 
-The trailing `/` on `params/` is intentional because `inference.py` constructs the cache filename through string concatenation.
+The output path is a directory and does not require a trailing slash. Single-target/single-seed runs retain the cache name below; multiple targets or seeds use separate sample/seed directories. Existing caches are refused rather than overwritten.
 
 The expected cache is:
 
@@ -124,7 +125,7 @@ This fitted model is the optimization-frame topology and placement template supp
 
 ## Stage F — Particle-guided refinement
 
-### Manuscript-consistent fixed-frame configuration
+### Example configuration with fixed stochasticity
 
 ```bash
 python -u src/train.py \
@@ -139,10 +140,11 @@ python -u src/train.py \
   --mini_batch_size 6 \
   --map_resolution 2.146 \
   --transR \
-  --update_affine_mat 
+  --update_affine_mat \
+  --train_deterministic
 ```
 
-The current implementation uses:
+The retained defaults are:
 
 - 10 epochs;
 - random seed 42;
@@ -150,7 +152,7 @@ The current implementation uses:
 - atom-weight learning rate `1e-2`;
 - Gaussian-width learning rate `5e-3`.
 
-These values are currently hard-coded in `train.py` and are not command-line options.
+Override them with `--epochs`, `--seed`, `--lr-bias`, `--lr-atom-weights` and `--lr-sdevs`. `--no-learn-gmm` freezes amplitudes and widths together. `--diffusion-seed` overrides the sampling seed; an independent single-GPU `--data-seed` requires `--rng-mode isolated`. The default RNG mode remains legacy.
 
 ## Stage G — Outputs
 
@@ -163,11 +165,11 @@ outputs/6zbh/checkpoint_
 the current code writes files such as:
 
 ```text
-outputs/6zbh/checkpoint__.pdb
-outputs/6zbh/checkpoint_1.pdb
+outputs/6zbh/checkpoint__.cif
+outputs/6zbh/checkpoint_1.cif
 outputs/6zbh/checkpoint_1.pth
 ...
-outputs/6zbh/checkpoint_10.pdb
+outputs/6zbh/checkpoint_10.cif
 outputs/6zbh/checkpoint_10.pth
 ```
 
@@ -180,7 +182,7 @@ Each epoch checkpoint contains:
 - `z_bias`;
 - current predicted coordinates and configuration.
 
-The initial `checkpoint__.pdb` is written before optimization. The `.pth` files can be large and should not normally be committed to Git.
+CIF is the training default; `--output-format pdb` or `both` is optional. The initial `checkpoint__.cif` is written before optimization. The `.pth` files can be large and should not normally be committed to Git.
 
 ## Stage H — Successful-run checks
 
@@ -215,3 +217,5 @@ bash examples/6zbh/run_initial_prediction.sh
 bash examples/6zbh/run_refinement.sh
 ```
 
+
+See [records, export and restart](outputs_and_restart.md) for JSONL, captured arguments, synchronized checkpoints and complete-epoch resume. Check inputs before model construction by appending `--check-inputs` to the training command. The active loss does not currently consume the optional half-map weights.

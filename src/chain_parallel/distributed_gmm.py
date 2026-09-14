@@ -190,3 +190,23 @@ def local_source_equivalent_penalty(
         sdev_violation.sum() / float(global_sdev_count)
         + weight_violation.sum() / float(global_atom_count)
     )
+
+
+def distributed_project_gaussians(
+    projector, atom_coordinates, rotations, translations, density_center,
+    resolution, box_size, apix, cutoff_range=5.0,
+    sigma_factor=1.0 / (math.pi * math.sqrt(2.0)),
+):
+    """Unified kernel API with source-equivalent component aggregation.
+
+    Do not call projector.forward on each component: its per-image centering
+    and normalization must happen only AFTER summing the component densities.
+    """
+    projected = projector.project_coordinates(atom_coordinates, rotations, apix)
+    origin = differentiable_global_min(projected.amin(dim=1, keepdim=True))
+    local_image = projector.render_raw(
+        projected, rotations, origin, resolution, box_size, cutoff_range, sigma_factor,
+    )
+    assembled = differentiable_sum(local_image)
+    return projector.finalize(assembled, translations, resolution, box_size,
+                              apix, density_center)

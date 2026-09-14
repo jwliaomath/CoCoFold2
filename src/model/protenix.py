@@ -613,7 +613,8 @@ class Protenix(nn.Module):
                 diffusion_data["pairformer_bias_experiment"] = True
                 diffusion_data["pairformer_bias_name"] = "pairformer_last_input_z_bias"
 
-            torch.save(diffusion_data, self.configs.output_model_dir+self.configs.sample_name+"_diffusion_data.pth")
+            from inference_io import save_diffusion_cache
+            save_diffusion_cache(diffusion_data, self.configs)
 
         pred_dict["coordinate"] = self.sample_diffusion(
             denoise_net=self.diffusion_module,

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+from run_recording import recorded, current_record, add_record_arguments, RecordingError
 import logging
 import os
 import time
@@ -25,44 +26,30 @@ from typing import Any, Mapping
 import torch
 import torch.distributed as dist
 
-from configs.configs_base import configs as configs_base
-from configs.configs_data import data_configs
-from configs.configs_inference import inference_configs
-from configs.configs_model_type import model_configs
-from protenix.config.config import parse_configs, parse_sys_args
-from protenix.data.inference.infer_dataloader import get_inference_dataloader
-# from protenix.model.protenix import Protenix
-from model.protenix import Protenix
-from protenix.utils.distributed import DIST_WRAPPER
-from protenix.utils.seed import seed_everything
-from protenix.utils.torch_utils import to_device
-from protenix.web_service.dependency_url import URL
-
-from runner.dumper import DataDumper
-
 import argparse
 import sys
-    
+
 logger = logging.getLogger(__name__)
-"""
-Due to the fair-esm repository being archived,
-it can no longer be updated to support newer versions of PyTorch.
-Starting from PyTorch 2.6, the default value of the weights_only argument
-in torch.load has been changed from False to True,
-which enhances security but causes loading ESM models to fail
-with the following error:
 
-_pickle.UnpicklingError: Weights only load failed. This file can still be loaded...
-This error occurs because the model file contains argparse.Namespace,
-which is not allowed by default in the secure unpickling process of PyTorch 2.6+.
-
-✅ Solution (Patch)
-Since we cannot modify the fair-esm source code,
-we can apply a patch before calling load_model_and_alphabet_local
-by manually adding argparse.Namespace to PyTorch's safe globals list.
-"""
-
-torch.serialization.add_safe_globals([Namespace])
+def _load_runtime_imports():
+    # Delay Protenix/config/kernel imports until basic input checks have passed.
+    global configs_base, data_configs, inference_configs, model_configs
+    global parse_configs, parse_sys_args, get_inference_dataloader, Protenix
+    global DIST_WRAPPER, seed_everything, to_device, URL, DataDumper
+    from configs.configs_base import configs as configs_base
+    from configs.configs_data import data_configs
+    from configs.configs_inference import inference_configs
+    from configs.configs_model_type import model_configs
+    from protenix.config.config import parse_configs, parse_sys_args
+    from protenix.data.inference.infer_dataloader import get_inference_dataloader
+    from model.protenix import Protenix
+    from protenix.utils.distributed import DIST_WRAPPER
+    from protenix.utils.seed import seed_everything
+    from protenix.utils.torch_utils import to_device
+    from protenix.web_service.dependency_url import URL
+    from runner.dumper import DataDumper
+    if hasattr(torch.serialization, 'add_safe_globals'):
+        torch.serialization.add_safe_globals([Namespace])
 
 
 class InferenceRunner(object):
@@ -308,7 +295,7 @@ def download_inference_cache(configs: Any) -> None:
     ):
         cur_cache_fpath = configs["data"][cache_name]
         if not opexists(cur_cache_fpath):
-            os.makedirs(os.path.dirname(cur_cache_fpath), exist_ok=True)
+            os.makedirs(os.path.dirname(cur_cache_fpath) or '.', exist_ok=True)
             tos_url = URL[cache_name]
             assert os.path.basename(tos_url) == os.path.basename(cur_cache_fpath), (
                 f"{cache_name} file name is incorrect, `{tos_url}` and "
@@ -326,7 +313,7 @@ def download_inference_cache(configs: Any) -> None:
         ):
             cur_cache_fpath = configs["data"]["template"][cache_name]
             if not opexists(cur_cache_fpath):
-                os.makedirs(os.path.dirname(cur_cache_fpath), exist_ok=True)
+                os.makedirs(os.path.dirname(cur_cache_fpath) or '.', exist_ok=True)
                 tos_url = URL[cache_name]
                 assert os.path.basename(tos_url) == os.path.basename(cur_cache_fpath), (
                     f"{cache_name} file name is incorrect, `{tos_url}` and "
@@ -411,126 +398,129 @@ def update_inference_configs(configs: Any, n_token: int) -> Any:
     return configs
 
 
-def infer_predict(runner: InferenceRunner, configs: Any) -> None:
-    """
-    Run the full inference process for the given runner and configurations.
-    Processes all samples in the dataloader for each specified seed.
+def _prepare_inference(configs):
+    from cli_utils import check_output_directory
+    from inference_io import read_inputs, cache_plan
+    targets = read_inputs(configs.input_json_path)
+    # Preserve the existing convention: the first target supplies JSON seeds.
+    seeds = (targets[0].get('modelSeeds') if configs.use_seeds_in_json else None) or configs.seeds
+    seeds = list(seeds)
+    planned = cache_plan(configs, targets, seeds)
+    check_output_directory(configs.dump_dir)
+    return targets, seeds, planned
 
-    Args:
-        runner (InferenceRunner): The initialized runner instance.
-        configs (Any): Inference configurations.
-    """
-    # Data loading
-    logger.info(f"Loading data from {configs.input_json_path}")
-    with open(configs.input_json_path, "r", encoding="utf-8") as f:
-        json_data = json.load(f)
 
-    seed_in_json = json_data[0].get("modelSeeds")
-    if seed_in_json and configs.use_seeds_in_json:
-        seeds = [int(i) for i in seed_in_json]
-        logger.info(f"Using seeds from JSON: {seeds}")
-    else:
-        seeds = configs.seeds
+def infer_predict(runner: InferenceRunner, configs: Any, prepared=None) -> None:
+    """Continue independent target/seed jobs, then fail if any job failed."""
+    from pathlib import Path
+    from inference_io import safe_name
+    targets, seeds, planned = prepared if prepared is not None else _prepare_inference(configs)
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()  # Every rank finishes preflight before any rank writes caches.
+    expected = {(target['name'], seed) for target in targets for seed in seeds}
+    outcomes = []
+    rank = DIST_WRAPPER.rank
+
+    def failure(sample, seed, exc, stage):
+        message = f'{type(exc).__name__}: {exc}'
+        outcomes.append(dict(sample_name=sample, seed=seed, status='failed',
+                             stage=stage, error=message, rank=rank))
+        logger.exception('Inference failed: target=%s seed=%s stage=%s', sample, seed, stage)
+        # Use rank and outcome index, never an unchecked target name as a path.
+        Path(runner.error_dir).mkdir(parents=True, exist_ok=True)
+        with open(opjoin(runner.error_dir, f'rank_{rank}_errors.txt'), 'a', encoding='utf-8') as handle:
+            handle.write(f'target={sample!r} seed={seed} stage={stage}: {message}\n')
+            handle.write(traceback.format_exc() + '\n')
 
     try:
         dataloader = get_inference_dataloader(configs=configs)
-    except Exception as e:
-        error_message = (
-            f"Dataloader initialization failed: {e}\n{traceback.format_exc()}"
-        )
-        logger.error(error_message)
-        with open(opjoin(runner.error_dir, "error.txt"), "a", encoding="utf-8") as f:
-            f.write(error_message)
-        return
+    except Exception as exc:
+        failure(None, None, exc, 'dataloader_init')
+        dataloader = None
 
-    num_data = len(dataloader.dataset)
-    t0_start = time.time()
-    for seed in seeds:
-        seed_everything(seed=seed, deterministic=configs.deterministic)
-        t1_start = time.time()
-        for batch in dataloader:
-            sample_name = "unknown"
+    if dataloader is not None:
+        for seed in seeds:
             try:
-                t2_start = time.time()
-                data, atom_array, data_error_message = batch[0]
-                sample_name = data["sample_name"]
+                seed_everything(seed=seed, deterministic=configs.deterministic)
+                for batch in dataloader:
+                    sample_name = None
+                    started = time.monotonic()
+                    try:
+                        data, atom_array, data_error_message = batch[0]
+                        sample_name = safe_name(data['sample_name'])
+                        if (sample_name, seed) not in expected:
+                            raise ValueError(f'Unexpected dataloader target: {sample_name!r}')
+                        if data_error_message:
+                            raise ValueError(data_error_message)
+                        new_configs = update_inference_configs(configs, data['N_token'].item())
+                        cache = planned.get((sample_name, seed))
+                        new_configs.cache_output_path = str(cache) if cache is not None else None
+                        current_record().resolved(f"target_{sample_name}_seed_{seed}", new_configs, "Existing token-count-specific runtime configuration")
+                        runner.update_model_configs(new_configs)
+                        prediction = runner.predict(data)
+                        runner.dumper.dump(
+                            dataset_name='', pdb_id=sample_name, seed=seed,
+                            pred_dict=prediction, atom_array=atom_array,
+                            entity_poly_type={k: v for k, v in data['entity_poly_type'].items()
+                                              if v != 'non-polymer'},
+                        )
+                        outcomes.append(dict(sample_name=sample_name, seed=seed, status='success',
+                                             rank=rank, elapsed_seconds=time.monotonic() - started))
+                        logger.info('Target %s seed %s succeeded.', sample_name, seed)
+                    except RecordingError:
+                        raise
+                    except Exception as exc:
+                        failure(sample_name, seed, exc, 'target')
+                    finally:
+                        torch.cuda.empty_cache()
+            except RecordingError:
+                raise
+            except Exception as exc:
+                # A broken iterator cannot safely resume; other seeds still run.
+                failure(None, seed, exc, 'dataloader_iteration')
 
-                if len(data_error_message) > 0:
-                    logger.error(f"Data error for {sample_name}: {data_error_message}")
-                    with open(
-                        opjoin(runner.error_dir, f"{sample_name}.txt"),
-                        "a",
-                        encoding="utf-8",
-                    ) as f:
-                        f.write(data_error_message)
-                    continue
-
-                logger.info(
-                    f"[Rank {DIST_WRAPPER.rank} ({data['sample_index'] + 1}/{num_data})] "
-                    f"{sample_name} [seed:{seed}]: "
-                    f"N_asym {data['N_asym'].item()}, N_token {data['N_token'].item()}, "
-                    f"N_atom {data['N_atom'].item()}, N_msa {data['N_msa'].item()}"
-                )
-                new_configs = update_inference_configs(configs, data["N_token"].item())
-                runner.update_model_configs(new_configs)
-                prediction = runner.predict(data)
-                runner.dumper.dump(
-                    dataset_name="",
-                    pdb_id=sample_name,
-                    seed=seed,
-                    pred_dict=prediction,
-                    atom_array=atom_array,
-                    entity_poly_type={
-                        k: v
-                        for k, v in data["entity_poly_type"].items()
-                        if v != "non-polymer"
-                    },
-                )
-                t2_end = time.time()
-                logger.info(
-                    f"[Rank {DIST_WRAPPER.rank}] {sample_name} [seed:{seed}] succeeded. "
-                    f"Model forward time: {t2_end-t2_start:.2f}s. "
-                    f"Results saved to {configs.dump_dir}"
-                )
-                torch.cuda.empty_cache()
-            except Exception as e:
-                error_message = (
-                    f"[Rank {DIST_WRAPPER.rank}] {sample_name} failed: {e}\n"
-                    f"{traceback.format_exc()}"
-                )
-                logger.error(error_message)
-                with open(
-                    opjoin(runner.error_dir, f"{sample_name}.txt"),
-                    "a",
-                    encoding="utf-8",
-                ) as f:
-                    f.write(error_message)
-                torch.cuda.empty_cache()
-        t1_end = time.time()
-        logger.info(
-            f"[Rank {DIST_WRAPPER.rank}] Seed {seed} completed in {t1_end-t1_start:.2f}s."
-        )
-    # Remove the error directory if it's empty
-    if opexists(runner.error_dir):
-        try:
-            if not os.listdir(runner.error_dir):
-                os.rmdir(runner.error_dir)
-        except Exception:
-            pass
-
-    t0_end = time.time()
-    logger.info(f"[Rank {DIST_WRAPPER.rank}] Job completed in {t0_end-t0_start:.2f}s.")
+    if dist.is_available() and dist.is_initialized():
+        gathered = [None] * dist.get_world_size()
+        dist.all_gather_object(gathered, outcomes)
+        outcomes = [row for rows in gathered for row in rows]
+    seen = {(row['sample_name'], row['seed']) for row in outcomes}
+    for sample_name, seed in sorted(expected - seen):
+        outcomes.append(dict(sample_name=sample_name, seed=seed, status='failed',
+                             stage='not_processed', error='Target was not returned by the dataloader'))
+    for row in outcomes:
+        cache = planned.get((row['sample_name'], row['seed']))
+        row['cache_path'] = str(cache) if cache is not None else None
+        row['cache_exists'] = cache.is_file() if cache is not None else False
+    failed = sum(row['status'] == 'failed' and (row['sample_name'], row['seed']) in expected for row in outcomes)
+    execution_errors = sum(row['status'] == 'failed' and (row['sample_name'], row['seed']) not in expected for row in outcomes)
+    summary = dict(expected_jobs=len(expected), succeeded=sum(row['status'] == 'success' for row in outcomes),
+                   failed=failed, execution_errors=execution_errors, outcomes=outcomes)
+    current_record().resolved('prediction_outcomes', summary, 'Collected per-target/seed outcomes including failures')
+    for row in outcomes:
+        current_record().event('prediction_result', **row)
+    summary_path = Path(configs.dump_dir) / 'inference_summary.json'
+    if rank == 0:
+        summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding='utf-8')
+        current_record().artifact(summary_path, 'inference_summary')
+        for row in outcomes:
+            if row['cache_exists']:
+                current_record().artifact(row['cache_path'], 'diffusion_cache')
+        logger.info('Inference summary: %s', summary_path)
+    if failed or execution_errors:
+        raise RuntimeError(f'Inference had {failed} target failure(s) and {execution_errors} execution error(s); see {summary_path}')
+    return summary
 
 
-def main(configs: Any) -> None:
+def main(configs: Any, prepared=None) -> None:
     """
     Inference entry point.
 
     Args:
         configs (Any): Inference configurations.
     """
+    prepared = prepared if prepared is not None else _prepare_inference(configs)
     runner = InferenceRunner(configs)
-    infer_predict(runner, configs)
+    infer_predict(runner, configs, prepared=prepared)
 
 
 def update_gpu_compatible_configs(configs: Any) -> Any:
@@ -565,6 +555,7 @@ def update_gpu_compatible_configs(configs: Any) -> Any:
     return configs
 
 
+@recorded("inference")
 def run(args) -> None:
     """
     Initialize and execute the inference pipeline.
@@ -580,6 +571,19 @@ def run(args) -> None:
         filemode="w",
     )
 
+    from randomness import resolve_seeds, apply_seed_settings
+    seed_settings = resolve_seeds(args, "inference")
+    from inference_io import read_inputs, safe_name
+    targets = read_inputs(args.input_json_path)
+    if args.sample_name is not None:
+        safe_name(args.sample_name)
+    if getattr(args, 'check_inputs', False):
+        report = dict(targets=[t['name'] for t in targets],
+                      scope='basic JSON structure and target names only; model runtime and external MSA/template validation not run')
+        current_record().resolved("preflight", report, "Explicitly recorded basic JSON check; no model execution")
+        print(json.dumps(report))
+        return report
+    _load_runtime_imports()
     arg_str = parse_sys_args()
 
     configs = {**configs_base, **{"data": data_configs}, **inference_configs}
@@ -590,10 +594,15 @@ def run(args) -> None:
         fill_required_with_null=True,
     )
     model_name = configs.model_name
-    
+
     # 2. Get model specifics and merge into base defaults
     base_configs = {**configs_base, **{"data": data_configs}, **inference_configs}
+    if model_name not in model_configs:
+        raise ValueError(f'Unknown model_name {model_name!r}')
+    record = current_record()
+    record.resolved("base_defaults", base_configs, "Existing base/data/inference defaults before model merge")
     model_specfics_configs = model_configs[model_name]
+    record.resolved("model_overrides", model_specfics_configs, "Selected model-specific configuration")
 
     def deep_update(d, u):
         for k, v in u.items():
@@ -612,6 +621,7 @@ def run(args) -> None:
         fill_required_with_null=True,
     )
 
+    record.resolved("protenix_cli", configs, "Existing model/default merge followed by forwarded Protenix CLI arguments")
     configs.sample_diffusion = {
     "gamma0": float(args.gamma0),
     "gamma_min": float(args.gamma_min),
@@ -624,8 +634,9 @@ def run(args) -> None:
     }
     print('Original N_cycle',configs.model.N_cycle)
     print('enable_diffusion_shared_vars_cache',configs.enable_diffusion_shared_vars_cache)
-    configs.model.N_cycle = 10
+    # configs.model.N_cycle = 10
     configs.train_deterministic = args.train_deterministic
+    apply_seed_settings(configs, seed_settings)
     configs.input_json_path= str(args.input_json_path)
     configs.dump_dir= str(args.dump_dir)
     configs.save_pairformer_last_input = args.save_pairformer_last_input
@@ -633,23 +644,11 @@ def run(args) -> None:
         configs.output_model_dir = str(args.output_model_dir)
     else:
         configs.output_model_dir = None
-    configs.sample_name = str(args.sample_name)
-    
-    local_base_dir = os.path.abspath(".")
-    
-    # 1. 强制重定向模型权重 (checkpoint) 存放路径
-    configs.load_checkpoint_dir = os.path.join(local_base_dir, "checkpoint")
-    
-    local_common_dir = os.path.join(local_base_dir, "common")
-    configs["data"]["ccd_components_file"] = os.path.join(local_common_dir, "components.cif")
-    configs["data"]["ccd_components_rdkit_mol_file"] = os.path.join(local_common_dir, "components.cif.rdkit_mol.pkl")
-    configs["data"]["pdb_cluster_file"] = os.path.join(local_common_dir, "clusters-by-entity-40.txt")
-    configs["data"]["obsolete_release_data_csv"] = os.path.join(local_common_dir, "obsolete_release_date.csv")
-    
-    # 如果启用了 template，顺便把 template 的两个 common 缓存也重定向过来
-    if "template" in configs["data"]:
-        configs["data"]["template"]["release_dates_path"] = os.path.join(local_common_dir, "release_date_cache.json")
-        configs["data"]["template"]["obsolete_pdbs_path"] = os.path.join(local_common_dir, "obsolete_to_successor.json")
+    configs.sample_name = args.sample_name
+
+    record.resolved("cocofold_cli", dict(configs=configs, seeds=seed_settings), "Existing CoCoFold CLI replaces sample_diffusion; seed settings applied without changing prediction seeds")
+    from inference_io import resolve_resource_paths
+    resolve_resource_paths(configs, getattr(args, 'resource_root', None), getattr(args, 'protenix_args', []))
     logger.info(
         f"Using params for model {model_name}: "
         f"cycle={configs.model.N_cycle}, step={configs.sample_diffusion.N_step}"
@@ -660,7 +659,10 @@ def run(args) -> None:
         f"with_feature: {model_feature.replace('-',', ')}, "
         f"model_version: {model_version}, dtype: {configs.dtype}"
     )
+    record.resolved("resource_paths", configs, "Explicit resource paths take precedence over resource_root/cwd defaults")
     configs = update_gpu_compatible_configs(configs)
+    record.resolved("gpu_compatible", configs, "Existing hardware compatibility overrides")
+    record.refresh_environment()
     logger.info(
         f"Triangle kernels: multiplicative={configs.triangle_multiplicative}, "
         f"attention={configs.triangle_attention}"
@@ -669,57 +671,49 @@ def run(args) -> None:
         f"Optimization: shared_vars_cache={configs.enable_diffusion_shared_vars_cache}, "
         f"efficient_fusion={configs.enable_efficient_fusion}, tf32={configs.enable_tf32}"
     )
+    # Resolve all cache destinations before downloads/model construction.
+    prepared = _prepare_inference(configs)
+    record.resolved("prediction_plan", dict(targets=[t["name"] for t in prepared[0]], prediction_seeds=prepared[1],
+                    caches=[dict(target=k[0], seed=k[1], path=str(v)) for k,v in prepared[2].items()]),
+                    "Existing first-target JSON modelSeeds convention, otherwise Protenix configured seeds")
     download_inference_cache(configs)
-    main(configs)
+    main(configs, prepared=prepared)
+
+
+def build_parser():
+    from cli_utils import positive_int, positive_float, nonnegative_float, boolean
+    parser = argparse.ArgumentParser(description="Protenix initial predictions and CoCoFold2 caches.")
+    from randomness import add_seed_arguments
+    add_seed_arguments(parser, "inference")
+    add_record_arguments(parser)
+    parser.add_argument("--input_json_path", required=True, help='Protenix target JSON; may contain multiple targets. Relative CLI paths use the working directory. Default: %(default)s.')
+    parser.add_argument("--sample_name", default=None,
+                        help="Legacy cache name for one target and one seed; otherwise use actual target names.")
+    parser.add_argument("--train-deterministic", "--train_deterministic",
+                        action=argparse.BooleanOptionalAction, default=True, help='Reuse fixed diffusion stochasticity; disabling resamples noise. Default: %(default)s.')
+    parser.add_argument("--output_model_dir", default=None,
+                        help="Cache directory; trailing slash is optional. Existing caches are never overwritten.")
+    parser.add_argument("--dump_dir", default='./output', help='Protenix prediction and inference-record output directory; relative to the working directory. Default: %(default)s.')
+    parser.add_argument("--gamma0", default=0., type=nonnegative_float, help='Diffusion churn magnitude stored in the cache sampling configuration. Default: %(default)s.')
+    parser.add_argument("--gamma_min", default=0., type=nonnegative_float, help='Noise-level threshold controlling diffusion churn. Default: %(default)s.')
+    parser.add_argument("--noise_scale_lambda", default=1.003, type=nonnegative_float, help='Multiplier for diffusion noise injection. Default: %(default)s.')
+    parser.add_argument("--step_scale_eta", default=1., type=positive_float, help='Scale of each diffusion integration update. Default: %(default)s.')
+    parser.add_argument("--N_step", default=5, type=positive_int, help='Number of denoising integration steps saved in the diffusion sampling configuration. Default: %(default)s.')
+    parser.add_argument("--N_sample", default=1, type=positive_int, help='Number of structure samples per target/seed; refinement requires a compatible single-structure cache. Default: %(default)s.')
+    parser.add_argument("--N_step_mini_rollout", default=5, type=positive_int, help='Denoising steps for the saved mini-rollout configuration. Default: %(default)s.')
+    parser.add_argument("--N_sample_mini_rollout", default=5, type=positive_int, help='Structure samples for the saved mini-rollout configuration; separate from particle mini-batches. Default: %(default)s.')
+    parser.add_argument("--save_pairformer_last_input", default=False, type=boolean, nargs='?', const=True, help='Save the final Pairformer input for downstream cache preparation; optional explicit boolean. Default: %(default)s.')
+    parser.add_argument("--resource-root", default=None,
+                        help="Default checkpoint/common root; explicit Protenix paths take precedence.")
+    parser.add_argument("--check-inputs", action="store_true",
+                        help="Check basic JSON structure/names without Protenix or downloads; excludes external MSA/template validation.")
+    return parser
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--input_json_path",
-    )
-    parser.add_argument(
-        "--sample_name",
-    )
-    parser.add_argument(
-    "--train-deterministic",
-    action=argparse.BooleanOptionalAction,
-    default=True,
-    )
-    parser.add_argument(
-        "--output_model_dir", default=None
-    )
-    parser.add_argument(
-        "--dump_dir", default='./output'
-    )
-    parser.add_argument(
-        "--gamma0",default=0,
-    )
-    parser.add_argument(
-        "--gamma_min",default=0,
-    )
-    parser.add_argument(
-        "--noise_scale_lambda",default=1.003,
-    )
-    parser.add_argument(
-        "--step_scale_eta",default=1,
-    )
-    parser.add_argument(
-        "--N_step",default=5,
-    )
-    parser.add_argument(
-        "--N_sample",default=1,
-    )
-    parser.add_argument(
-        "--N_step_mini_rollout",default=5,
-    )
-    parser.add_argument(
-        "--N_sample_mini_rollout",default=5,
-    )
-    parser.add_argument(
-        "--save_pairformer_last_input",default=False
-    )
-    
-    args, leftovers = parser.parse_known_args()
+    original_argv = list(sys.argv)
+    args, leftovers = build_parser().parse_known_args()
+    args.original_argv = original_argv
+    args.protenix_args = list(leftovers)
     sys.argv = [sys.argv[0]] + leftovers
     run(args)

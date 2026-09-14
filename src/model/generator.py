@@ -16,6 +16,7 @@ from typing import Any, Callable, Optional
 
 import torch
 import numpy as np
+from randomness import isolated_sampling, seed_legacy, seed_value
 from protenix.model.utils import centre_random_augmentation
 
 
@@ -116,6 +117,7 @@ class InferenceNoiseScheduler:
         return t_step_list
 
 
+@isolated_sampling
 def sample_diffusion(
     configs:Any,
     denoise_net: Callable,
@@ -182,10 +184,7 @@ def sample_diffusion(
         # [..., N_sample, N_atom, 3]
         if configs.train_deterministic:
             
-            torch.manual_seed(42)
-            np.random.seed(42)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed(42)
+            seed_legacy(seed_value(getattr(configs, "diffusion_seed", 42)))
             x_l = noise_schedule[0] * torch.randn(
                 size=(*batch_shape, chunk_n_sample, N_atom, 3), device=device, dtype=dtype
             )

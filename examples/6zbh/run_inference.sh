@@ -12,6 +12,7 @@ fi
 source "${ENV_FILE}"
 
 : "${COCOFOLD2_ROOT:?COCOFOLD2_ROOT is required}"
+export PROTENIX_ROOT_DIR="${PROTENIX_ROOT_DIR:-${COCOFOLD2_ROOT}}"
 : "${INPUT_JSON:?INPUT_JSON is required}"
 : "${PARAMS_ROOT:?PARAMS_ROOT is required}"
 : "${OUTPUT_ROOT:?OUTPUT_ROOT is required}"
@@ -19,8 +20,8 @@ source "${ENV_FILE}"
 
 [[ -f "${INPUT_JSON}" ]] || { echo "ERROR: missing INPUT_JSON: ${INPUT_JSON}" >&2; exit 1; }
 [[ -f "${COCOFOLD2_ROOT}/src/inference.py" ]] || { echo "ERROR: src/inference.py not found under COCOFOLD2_ROOT" >&2; exit 1; }
-[[ -d "${COCOFOLD2_ROOT}/checkpoint" ]] || { echo "ERROR: Protenix checkpoint/ directory is missing" >&2; exit 1; }
-[[ -d "${COCOFOLD2_ROOT}/common" ]] || { echo "ERROR: Protenix common/ directory is missing" >&2; exit 1; }
+[[ -d "${PROTENIX_ROOT_DIR}/checkpoint" ]] || { echo "ERROR: Protenix checkpoint/ directory is missing" >&2; exit 1; }
+[[ -d "${PROTENIX_ROOT_DIR}/common" ]] || { echo "ERROR: Protenix common/ directory is missing" >&2; exit 1; }
 
 mkdir -p "${PARAMS_ROOT}" "${OUTPUT_ROOT}/protenix_6zbh" "${LOG_ROOT}"
 PARAMS_WITH_SLASH="${PARAMS_ROOT%/}/"
@@ -28,6 +29,7 @@ PARAMS_WITH_SLASH="${PARAMS_ROOT%/}/"
 cd "${COCOFOLD2_ROOT}"
 CMD=(
   python -u src/inference.py
+  --resource-root "${PROTENIX_ROOT_DIR}"
   --input_json_path "${INPUT_JSON}"
   --sample_name 6zbh
   --output_model_dir "${PARAMS_WITH_SLASH}"
