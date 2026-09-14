@@ -14,6 +14,8 @@ class ComponentEntry:
     rank: int
     diffusion_data_dir: Path
     cif_path: Path
+    alignment_manifest: Path | None = None
+    chain_id_map: dict[str, str] | None = None
 
 
 def _resolve(base: Path, value: str) -> Path:
@@ -33,8 +35,10 @@ def load_manifest(path: str | Path) -> tuple[ComponentEntry, ...]:
     seen_ranks: set[int] = set()
     for item in raw.get("components", []):
         component_id = str(item["id"])
-        rank = int(item["rank"])
-        if not component_id or any(character in component_id for character in "/\\"):
+        if type(item.get("rank")) is not int or item['rank'] < 0:
+            raise ValueError('component rank must be a nonnegative integer')
+        rank = item["rank"]
+        if not component_id or component_id in ('.', '..') or any(character in component_id for character in "/\\"):
             raise ValueError(f"invalid component id: {component_id!r}")
         if component_id in seen_ids:
             raise ValueError(f"duplicate component id: {component_id}")
@@ -51,6 +55,8 @@ def load_manifest(path: str | Path) -> tuple[ComponentEntry, ...]:
                 rank=rank,
                 diffusion_data_dir=_resolve(source.parent, item["diffusion_data_dir"]),
                 cif_path=_resolve(source.parent, item["cif_path"]),
+                alignment_manifest=_resolve(source.parent, item['alignment_manifest']) if item.get('alignment_manifest') else None,
+                chain_id_map=item.get('chain_id_map'),
             )
         )
     if not entries:

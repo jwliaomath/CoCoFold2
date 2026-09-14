@@ -1,0 +1,18 @@
+schema_version: 1
+source_cache: inputs/cache/6zbh_diffusion_data.pth
+require_complete_partition: true
+# Author's verified 6ZBH full-cache topology. Inspect a newly generated cache.
+expected_source_n_token: 1683
+expected_source_n_atom: 13464
+components:
+  - id: chain_A_contextual
+    asym_ids: [0]
+    expected_n_token: 717
+    expected_n_atom: 5754
+    output_cache: inputs/cache/6zbhA_contextual_diffusion_data.pth
+  - id: chains_BCD_contextual
+    asym_ids: [1, 2, 3]
+    expected_n_token: 966
+    expected_n_atom: 7710
+    output_cache: inputs/cache/6zbhBCD_contextual_diffusion_data.pth
+report_json: inputs/cache/contextual_split_report.json

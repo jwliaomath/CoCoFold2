@@ -1,0 +1,12 @@
+schema_version: 1
+# Example local BCD labels A/B/C correspond to assembly labels B/C/D.
+components:
+  - id: 6zbhA
+    rank: 0
+    diffusion_data_dir: inputs/cache/6zbhA_diffusion_data.pth
+    cif_path: inputs/fitted/6zbhA_fitted_42.cif
+  - id: 6zbhBCD
+    rank: 1
+    diffusion_data_dir: inputs/cache/6zbhBCD_diffusion_data.pth
+    cif_path: inputs/fitted/6zbhBCD_fitted_42.cif
+    chain_id_map: {A: B, B: C, C: D}

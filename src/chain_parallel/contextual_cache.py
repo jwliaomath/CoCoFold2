@@ -41,6 +41,12 @@ CORE_ATOM_FEATURES = (
 )
 DERIVED_ATOM_FEATURES = ("d_lm", "v_lm", "pad_info")
 
+# Optional for old caches; preserve explicitly for template-free structure export.
+TOPOLOGY_TOKEN_FEATURES = ("restype",)
+TOPOLOGY_ATOM_FEATURES = (
+    "is_protein", "is_ligand", "is_dna", "is_rna", "modified_res_mask",
+)
+
 REQUIRED_CACHE_KEYS = (
     "model_state",
     "input_feature_dict",
@@ -305,6 +311,15 @@ def slice_contextual_cache(
         component_features[key] = _select_after_batch_prefix(
             value, atom_indices, atom_batch_shape, n_atom, key
         )
+    for keys, indices, prefix, size in (
+        (TOPOLOGY_TOKEN_FEATURES, token_indices, token_batch_shape, n_token),
+        (TOPOLOGY_ATOM_FEATURES, atom_indices, atom_batch_shape, n_atom),
+    ):
+        for key in keys:
+            if key in features:
+                component_features[key] = _select_after_batch_prefix(
+                    _require_tensor(features, key), indices, prefix, size, key
+                )
     s_inputs = _require_tensor(cache, "s_inputs")
     s_trunk = _require_tensor(cache, "s_trunk")
     component_s_inputs = _select_after_batch_prefix(
@@ -345,6 +360,7 @@ def slice_contextual_cache(
         "component_n_token": int(token_indices.numel()),
         "component_n_atom": int(atom_indices.numel()),
         "source_token_indices": token_indices.tolist(),
+        "source_atom_indices": atom_indices.tolist(),
         "conditioning_tensor": conditioning,
         "pairformer_context": "full_complex",
         "diffusion_scope": "component_only",

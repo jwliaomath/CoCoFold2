@@ -5,11 +5,11 @@ import mrcfile
 
 def load_mrc_volume_and_apix(path: str):
     """
-    读取 MRC 体数据和像素大小 (Å/pixel)。
+    Read an MRC volume and its pixel size (Angstrom/pixel).
     """
     with mrcfile.open(path, permissive=True) as m:
         vol = np.asarray(m.data, dtype=np.float32)
-        # m.voxel_size.x/y/z 通常是 Å
+        # m.voxel_size.x/y/z are normally expressed in Angstrom.
         apix_x = float(m.voxel_size.x) if m.voxel_size.x > 0 else None
         apix_y = float(m.voxel_size.y) if m.voxel_size.y > 0 else None
         apix_z = float(m.voxel_size.z) if m.voxel_size.z > 0 else None
@@ -43,14 +43,14 @@ def compute_halfmap_fsc_curve(
     eps: float = 1e-8,
 ):
     """
-    计算 3D half-map FSC 曲线，并返回:
-      - freq_centers: 每个 shell 的物理频率中心 (1/Å)
-      - fsc: 对应 shell 的 FSC 值
+    Compute the 3D half-map FSC curve and return:
+      - freq_centers: physical frequency center of each shell (1/Angstrom)
+      - fsc: FSC value for each shell
 
-    shell 的定义采用与 2D FRC 一致的“整数半径 ring/shell”思想，
-    再映射到物理频率:
+    Shells use integer-radius bins, following the 2D FRC ring convention,
+    then map radii to physical frequencies:
         freq = r / (N * apix)
-    其中 N = min(nz, ny, nx)
+    where N = min(nz, ny, nx).
     """
     if half1.shape != half2.shape:
         raise ValueError(f"half-map shape mismatch: {half1.shape} vs {half2.shape}")
@@ -62,7 +62,7 @@ def compute_halfmap_fsc_curve(
     f1 = np.fft.fftn(half1)
     f2 = np.fft.fftn(half2)
 
-    # 使用像素坐标半径做 shell，再映射到物理频率
+    # Build shells from pixel-coordinate radii, then map to physical frequencies.
     zz, yy, xx = np.meshgrid(
         np.arange(nz) - nz // 2,
         np.arange(ny) - ny // 2,
@@ -71,14 +71,14 @@ def compute_halfmap_fsc_curve(
     )
     rr_pix = np.sqrt(xx**2 + yy**2 + zz**2)
 
-    # 为了和 shift 后的 Fourier 对齐
+    # Align Fourier coefficients with the centered shell grid.
     f1 = np.fft.fftshift(f1)
     f2 = np.fft.fftshift(f2)
 
     frc_vals = []
     freq_centers = []
 
-    df = 1.0 / (nmin * apix)  # 频率步长 (1/Å)
+    df = 1.0 / (nmin * apix)  # frequency spacing (1/Angstrom)
 
     for r in range(1, max_shell + 1):
         mask = (rr_pix >= (r - 0.5)) & (rr_pix < (r + 0.5))
@@ -110,11 +110,11 @@ def build_halfmap_shell_weights(
     dtype: torch.dtype = torch.float32,
 ):
     """
-    返回:
-      - shell_weight_freqs: shape [K], 每个 3D FSC shell 的频率中心 (1/Å)
-      - shell_weights:      shape [K], 对应权重
+    Returns:
+      - shell_weight_freqs: shape [K], frequency center of each 3D FSC shell (1/Angstrom)
+      - shell_weights:      shape [K], corresponding weights
 
-    若未传 half-map，则返回 (None, None)。
+    Return (None, None) if either half-map path is absent.
     """
     if halfmap1_path is None or halfmap2_path is None:
         return None, None
@@ -130,7 +130,7 @@ def build_halfmap_shell_weights(
     if clamp_min_zero:
         fsc = np.clip(fsc, 0.0, None)
 
-    # 最简单、最稳的 ROCKET-inspired 权重
+    # ROCKET-inspired weights from the FSC curve.
     weights = fsc ** gamma
 
     if smooth_win and smooth_win > 1:
@@ -150,13 +150,13 @@ def interpolate_weights_by_frequency(
     dtype: torch.dtype,
 ):
     """
-    按物理频率插值，而不是按长度插值。
-    输入:
-      src_freqs   : [K_src]  3D FSC 的频率中心
-      src_weights : [K_src]  3D FSC shell 权重
-      tgt_freqs   : [K_tgt]  2D FRC ring 频率中心
+    Interpolate by physical frequency rather than array length.
+    Inputs:
+      src_freqs   : [K_src]  3D FSC frequency centers
+      src_weights : [K_src]  3D FSC shell weights
+      tgt_freqs   : [K_tgt]  2D FRC ring frequency centers
 
-    返回:
+    Returns:
       tgt_weights : [K_tgt]
     """
     if src_freqs is None or src_weights is None:
@@ -166,7 +166,7 @@ def interpolate_weights_by_frequency(
     src_w = src_weights.detach().cpu().numpy().astype(np.float32)
     tgt_f = tgt_freqs.detach().cpu().numpy().astype(np.float32)
 
-    # 超出 src 最大频率的部分设为 0，更合理
+    # Set weights beyond the maximum source frequency to zero.
     tgt_w = np.interp(
         tgt_f,
         src_f,

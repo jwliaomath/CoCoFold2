@@ -1,5 +1,11 @@
 # Component-parallel CoCoFold2 refinement
 
+For the concrete two-GPU **6ZBH A + BCD (1+3)** workflow, start with
+[the complete example](../examples/6zbh_parallel/README.md). It includes
+Contextual/Independent manifest templates, explicit BCD chain-name mapping,
+full-STAR refinement, automatic merged CIF output and CPU result checking.
+The sections below describe the general cache preparation and K-rank workflow.
+
 This tutorial describes the component-parallel particle-refinement workflow
 implemented in [`src/chain_parallel`](../src/chain_parallel). It covers:
 
@@ -44,7 +50,7 @@ and its full pair representation to fit once.
 
 ## 1. Installation and repository layout
 
-Follow the main [installation instructions](../README.md#installation) and
+Follow the [installation instructions](installation.md) and
 run the commands below from the repository root:
 
 ```bash
@@ -165,8 +171,8 @@ python -u src/inference.py \
   --dump_dir runs/target/independent/protenix/DEF
 ```
 
-The trailing slash on `--output_model_dir` is required by the current filename
-construction. Expected files include:
+Use a new output directory: inference refuses to overwrite existing caches.
+For one target and one seed, the compatible filenames include:
 
 ```text
 runs/target/independent/cache/target_A_diffusion_data.pth
@@ -251,8 +257,9 @@ Add `--transR` only when required by the validated upstream orientation
 convention. Add `--update_affine_mat` only when the flip safeguard used in the
 registered experiment is intended.
 
-The particle-stack root must end in `/` because the current loader concatenates
-it with the path stored in `rlnImageName`.
+Absolute particle-stack paths in `rlnImageName` are used directly. Relative
+paths use `--mrc_data_dir` when supplied, otherwise the STAR file's directory.
+A trailing slash is not required.
 
 ## 5. Contextual-component refinement
 
@@ -549,6 +556,12 @@ For every rank, the trainer writes:
 - run metadata containing component IDs, cache metadata, world size and
   numerical settings.
 
+Each epoch also produces a merged CIF and a complete-epoch JSON index; manual
+merging is unnecessary. If component CIFs reuse local chain letters, provide
+an explicit `chain_id_map` in each affected manifest entry. In the validated
+6ZBH references the BCD component's A/B/C maps to B/C/D, while the A component
+keeps A. This changes merged identities, not reference coordinates.
+
 Rank 0 also writes a summary metrics file. For a distributed batch, use the
 maximum `batch_time_seconds` across rank-specific files as the observed step
 time; do not report rank-0 time alone as total distributed time.
@@ -563,3 +576,31 @@ Before interpreting a run, confirm:
 6. all ranks received the same particle indices;
 7. loss, gradients and renderer parameters remain finite; and
 8. the reported checkpoint was selected without access to the deposited evaluation structure.
+
+## 9. Public recording and restart controls
+
+`--seed` defaults to 42; `--diffusion-seed` and `--data-seed` can override the
+streams. Parallel retains its historical dedicated DataLoader generator and
+the same particle sequence on every rank. `--learn-gmm` remains on by default;
+`--no-learn-gmm` freezes both amplitude and width parameters. `--epochs` is
+configurable, with the original default of 10. `--output-format cif` is the
+default; requesting PDB also retains CIF for assembly.
+
+Default placement is one transform per component. `--by-chain --fit-atoms ca`
+fits chains independently inside each component without adding decoders or
+ranks; `--fit-atoms all` uses all atoms. If affine updates are enabled, chains
+share a trace threshold but update independently when it is triggered. These
+options are not enabled in the 6ZBH 1+3 main example.
+
+To resume, give the trainer `--resume /path/to/model_epoch_EPOCH.json`, the
+same component manifest/STAR and a new output prefix. `--epochs` is the total
+target, including completed epochs. Scientific settings are inherited;
+explicit conflicting settings, incomplete rank files, changed grouping or
+GPU count are rejected. Only complete epochs can resume. Old refinement files
+can instead be listed as component cache paths with `--warm-start`, which
+starts new optimization progress. Exceptions do not trigger rescue saves.
+
+Command/configuration/provenance and JSONL records are saved per rank. An
+explicit `--record-dir` is a shared parent containing `rank0`, `rank1`, etc.
+`--submission-script` records the actual submitted script. The complete-example
+checker does not redo diffusion decoding or the short resume experiment.

@@ -86,13 +86,13 @@ rlnImageName
 
 ### 4. MRC/MRCS particle stack
 
-Each `rlnImageName` entry is expected to use the usual `index@path/to/stack.mrcs` form. The current implementation obtains the stack path through direct string concatenation:
-
-```text
-particle_root + path_from_rlnImageName
-```
-
-Therefore, the particle root supplied as `--mrc_data_dir` should end in `/`, and the path portion of `rlnImageName` must be compatible with that root. Absolute paths in STAR files can reduce portability and should be replaced with a documented relative layout where possible.
+Each `rlnImageName` entry uses a one-based `index@path/to/stack.mrcs` reference.
+Absolute paths are used directly. Relative paths resolve against
+`--mrc_data_dir` when supplied, otherwise against the STAR file's directory.
+No trailing slash is required. Prefer a documented relative layout for portability.
+The input preflight checks referenced stacks, image indices and header shape.
+Pixel finiteness is checked when each particle is read; preflight is not a full
+scan of every pixel in every stack.
 
 ### 5. Particle poses and translations
 
@@ -110,7 +110,7 @@ Voltage, defocus values, defocus angle, spherical aberration, amplitude contrast
 
 ### 8. Initial Protenix structure and topology
 
-`get_pdb.py --cif_path` needs a Protenix-generated CIF/PDB whose atom order and topology correspond exactly to the generated coordinate tensor. Do not substitute a deposited reference structure as this topology template.
+`get_pdb.py` can reconstruct topology from compatible cache features without a template. If `--cif_path` is supplied, its atom identities and topology must correspond to the generated coordinate tensor; use the matching Protenix-generated CIF/PDB. Do not substitute a deposited reference structure as this topology template.
 
 ### 9. Rigidly fitted initial model
 

@@ -1,118 +1,92 @@
 # CoCoFold2
 
-**CoCoFold2: latent refinement of diffusion-based protein structure predictions using limited-particle cryo-EM data**
+CoCoFold2 refines a protein structure against cryo-EM particle observations
+using a frozen Protenix-v1 diffusion prior. It optimizes a target-specific latent
+perturbation and, by default, Gaussian renderer amplitudes and widths. Network
+weights remain frozen. Fixed stochasticity supports deterministic latent
+refinement within the selected sampling setup; it does not optimize an
+expectation over all diffusion samples.
 
-CoCoFold2 is a deterministic experimental refinement framework that couples a frozen Protenix-style protein diffusion prior to cryo-EM particle observations. It fixes the diffusion sampling state and optimizes a target-specific latent bias, together with auxiliary Gaussian-rendering parameters, while keeping all pretrained network weights frozen.
+The public workflow includes initial prediction/cache generation, single-GPU
+refinement, optional per-chain rigid alignment, component-parallel refinement,
+CIF/PDB export and complete-epoch restart. It requires a sufficiently accurate
+initial prior, informative observations, upstream particle poses/CTF estimates
+and a compatible initial structure placed in the experimental coordinate frame.
+CoCoFold2 does not estimate particle poses or CTF parameters.
 
-## Workflow
+## Start with the CPU checks
 
-```mermaid
-flowchart LR
-    A[Protenix input JSON] --> B[Frozen Protenix inference<br/>and diffusion-tensor cache]
-    B --> C[Deterministic initial structure]
-    C --> D[Rigid-body placement into<br/>the experimental frame]
-    D --> E[Particle/CTF forward model]
-    E --> F[Latent and renderer-parameter<br/>optimization]
-    F --> G[Refined structure<br/>and checkpoints]
-```
-
-## Current capabilities
-
-- Uses a frozen Protenix-v1/AF3-style diffusion prior.
-- Reuses cached Protenix conditional representations during iterative refinement.
-- Keeps a fixed diffusion sampling state during target-specific optimization.
-- Compares differentiably rendered model projections with raw cryo-EM particles using upstream poses and CTF parameters.
-- Optimizes a target-specific `z_bias` together with Gaussian-rendering atom weights and Gaussian widths (`sdevs`).
-- Writes epoch-wise coordinate models and PyTorch checkpoints for downstream inspection.
-- Supports both pre-RELION-3.1 and RELION 3.1+ STAR metadata layouts implemented by `ParticleDataset`.
-- Supports approximate component-parallel refinement across multiple GPUs, with one user-defined component group per rank and either independently generated or full-context-derived component caches.
-
-## Current limitations
-
-- Particle poses and CTF parameters must be supplied by an upstream cryo-EM processing workflow and are held fixed.
-- Initial rigid-body placement into the experimental coordinate frame is external to CoCoFold2.
-- CoCoFold2 is not a pose-estimation or three-dimensional reconstruction pipeline.
-- The current release does not model conformational ensembles or continuous heterogeneity.
-- Memory use can be high and depends on target size, atom count, particle box size, diffusion settings and particle mini-batch size.
-- The current implementation uses 10 epochs, random seed 42 and fixed learning rates hard-coded in `train.py`.
-- Component-parallel refinement is an approximation rather than exact full-complex Protenix inference: component-local diffusion omits cross-component diffusion attention, and the contextual strategy still requires one full-complex Pairformer pass.
-
-## Important scientific-use warning
-
-The structure supplied to `train.py --cif_path` must be the **initial Protenix model after rigid-body placement into the experimental frame**. A deposited reference structure may be used retrospectively for evaluation, but it must not be used as the optimization target or as the rigid-fitting template for the reported experiment.
-
-## Installation
-
-An NVIDIA GPU is required. The tested environment uses Python 3.11, PyTorch 2.7.1 and CUDA 12.6-compatible NVIDIA drivers.
+Follow [installation](docs/installation.md) to create a separate CPU environment:
 
 ```bash
-git clone https://github.com/jwliaomath/CoCoFold2.git
-cd CoCoFold2
-conda env create -f environment.yml
-conda activate cocofold2
+python tests/run_public_tests.py --output results/first_cpu_check
 ```
 
-The current repository is run directly from its root and does not provide a `setup.py` or `pyproject.toml`; do not run `pip install -e .`.
+This checks an independent public copy without Protenix, weights, private code
+or GPUs. Each test and a total pass/fail summary are written to JSON, Markdown
+and JUnit XML. An analytic decoder is used where needed; this is not a
+real-model test. See [test levels and commands](tests/README_public_tests.md).
 
-CoCoFold2 depends on Protenix 1.0.2. Obtain the Protenix model parameters and required `checkpoint/` and `common/` resources according to the official [Protenix instructions](https://github.com/bytedance/Protenix) (You may simply run one prediction from the official Protenix and find the model parameters in the HOME ROOT). 
+## Try the small real-model example
 
-Environment recreation may require cluster-specific compiler, CUDA-driver and compiled-kernel adjustments. See [Troubleshooting](docs/troubleshooting.md).
+Use the [7ZDT/7ZD5 walkthrough](examples/7zdt_7zd5/README.md): generate a 3 Å
+map from the supplied 7ZD5 CIF, simulate 1000 SNR=1 particles, predict with
+Protenix-v1, place the prediction in the map, then run smoke and refine stages.
+The example explicitly freezes both GMM parameter groups. The general trainer
+keeps GMM learning enabled by default. The author accepted the real smoke and
+refine results in the existing server environment.
 
-## Quick start: the 6ZBH particle case
+For experimental particle inputs, see [data requirements](docs/data_requirements.md)
+and the [single-GPU 6ZBH tutorial](docs/particle_tutorial_6zbh.md).
+For independent rigid transforms within one structure, see
+[per-chain alignment](docs/block_rigid_alignment.md).
+For two GPUs, use the [6ZBH Contextual 1+3 example](examples/6zbh_parallel/README.md)
+and [component preparation](docs/component_parallel_tutorial.md). One GPU owns
+one component cache; a component may contain several chains. Per-chain fitting
+does not require one GPU per chain. Each epoch writes both component structures
+and a merged CIF.
 
-The first release uses a real research-scale 6ZBH case rather than a toy example.
+## Parameters, outputs and restart
 
-```bash
-cp examples/6zbh/env.sh.example examples/6zbh/env.sh
-# Edit examples/6zbh/env.sh and replace all TODO values.
+- `python src/train.py --help` lists controls and parameter explanations;
+  [CLI reference](docs/cli_reference.md) records the public entrypoints.
+- Defaults remain 10 epochs, seed 42, legacy RNG, GMM learning enabled and
+  learning rates 0.01/0.01/0.005 for latent bias/amplitudes/widths. Explicit
+  `--train_deterministic` documents the default fixed-stochasticity single-GPU run;
+  `--no-train_deterministic` explicitly disables it.
+- `train.py` requires an aligned reference CIF and defaults to CIF output;
+  choose `--output-format pdb` or `both` when needed. `get_pdb.py` can export
+  without a template when cache topology is sufficient.
+- `--check-inputs` diagnoses inputs before model construction. It does not
+  prove GPU memory sufficiency or successful model execution.
+- Runs record the captured argument vector, requested/resolved configuration,
+  provenance, metrics JSONL and artifacts. See [outputs and restart](docs/outputs_and_restart.md).
+- Complete new epoch checkpoints support `--resume`; older results use
+  `--warm-start`. `--epochs` is a cumulative target. No mid-epoch resume or
+  emergency checkpoint on OOM is provided.
 
-bash examples/6zbh/run_inference.sh
-bash examples/6zbh/run_initial_prediction.sh
+## Validation and limits
 
-# Perform the one-time external rigid-body fit described in the tutorial,
-# then run particle-guided refinement:
-bash examples/6zbh/run_refinement.sh
-```
+[Validation scope](docs/release_validation.md) separates CPU tests, real model
+checks and manual structural review. The accepted Contextual 6ZBH long case
+covers the first **four complete epochs**, not completion of the original
+ten-epoch job. Structure/map agreement and Cα RMSD remain manual assessments.
+Changing microbatch size can change legacy loss scaling, so preserve it in
+comparisons. Half-map weighting options currently do not enter the active
+particle FRC objective.
 
-Full instructions are provided in [Particle-guided CoCoFold2 refinement for 6ZBH](docs/particle_tutorial_6zbh.md). The required data fields are described in [Data requirements](docs/data_requirements.md).
+Random, fine-tuning and the main heterogeneity experiment code are outside this
+public release. Weights, MSA resources and experimental particle stacks are not
+bundled. The author accepted a fresh Linux installation, CPU tests and a short
+real-weight smoke run with GNU 12.2.0 configured for extension compilation.
+This does not establish support on every platform; final GitHub review remains
+pending. See [installation](docs/installation.md) and
+[troubleshooting](docs/troubleshooting.md).
 
-## Component-parallel refinement of larger assemblies
+## Citation and license
 
-The current component-parallel implementation assigns one complete-chain group to each distributed rank, combines differentiable component projections and evaluates one global particle-space loss. The number of ranks is determined by the number of component groups and is not fixed to two GPUs.
-
-See [Component-parallel CoCoFold2 refinement](docs/component_parallel_tutorial.md) for the Independent-component, Contextual-component and large-complex `z_trunk`-to-`pair_z` workflows.
-
-## Inputs
-
-The particle workflow requires:
-
-- a Protenix input JSON and the sequence/MSA/template resources referenced by it;
-- a compatible Protenix 1.0.2 model checkpoint and common-data resources;
-- RELION-format particle metadata containing particle orientations, translations and CTF parameters;
-- the referenced MRC/MRCS particle stack(s);
-- a Protenix topology model and cached diffusion tensors;
-- an initial model rigidly placed into the experimental coordinate frame;
-- pixel size, box size and the frequency cutoff used for the particle loss.
-
-## Outputs
-
-The current `train.py` interface treats `--output_trained_model_dir` as a **filename prefix**, not as a conventional directory argument. For a prefix such as `outputs/6zbh/checkpoint_`, the workflow produces:
-
-- an initial unrefined PDB written with the supplied topology template;
-- one PDB model per epoch;
-- one `.pth` checkpoint per epoch containing the frozen diffusion state, optimizer state, renderer parameters, cached representations, `z_bias`, current coordinates and configuration;
-- stdout/stderr logs reporting FRC loss, renderer penalty, runtime and peak allocated GPU memory.
-
-Large particle stacks, model weights and `.pth` caches should not be committed to Git.
-
-## Reproducibility notes
-
-- `train.py` currently fixes NumPy and PyTorch random seeds to 42.
-- Diffusion sampling uses the cached deterministic sampling setup generated by `inference.py`.
-- Numerical differences can still arise across GPUs, CUDA versions and compiled kernels.
-- The source may store the trainable pair bias at either the cached `pair_z` representation or `z_trunk`, depending on whether shared diffusion variables were cached. The checkpoint records both cached fields and `z_bias`.
-
-## Citation
-
-Citation metadata are provided in [`CITATION.cff`](CITATION.cff). Until the manuscript DOI is available, cite the repository and the CoCoFold2 manuscript using the placeholder information in that file.
-
+The existing author and repository metadata are in [CITATION.cff](CITATION.cff).
+The planned release is CoCoFold2 v1.0.0. A manuscript DOI is not yet available
+and is omitted from the citation metadata.
+The code retains its [Apache-2.0 license](LICENSE); upstream software and data
+retain their respective terms and attribution requirements.

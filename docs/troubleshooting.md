@@ -8,7 +8,7 @@ Some PyTorch environments do not expose the checkpoint submodule until it is exp
 import torch.utils.checkpoint
 ```
 
-in the relevant execution path before `torch.utils.checkpoint.checkpoint` is accessed. Fix this explicitly in the source before public release rather than silently patching it only in the tutorial.
+in the relevant execution path before `torch.utils.checkpoint.checkpoint` is accessed. The public implementation imports this dependency explicitly. If the error persists, check the traceback/import location to ensure the expected source and environment are in use.
 
 ## CUDA out of memory
 
@@ -20,7 +20,7 @@ Reduce `--batch_size` and/or `--mini_batch_size`. Peak memory also increases wit
 - diffusion attention/chunk settings;
 - cached representation size.
 
-Changing mini-batch size may affect throughput. Record any changed settings when comparing runtimes.
+Changing mini-batch size affects throughput and may change legacy loss scaling; it is not guaranteed to be a numerically neutral memory adjustment. Record any changed settings when comparing runtimes.
 
 ## Missing STAR columns
 
@@ -33,13 +33,10 @@ Do not rename columns without updating the loader.
 
 ## Incorrect `rlnImageName` paths
 
-The loader splits `rlnImageName` at `@` and reads:
-
-```text
-mrc_data_dir + path_from_rlnImageName
-```
-
-Ensure that `--mrc_data_dir` ends in `/` and that the STAR paths are relative to that root. Test one path manually before launching a long job.
+Absolute image paths in STAR are used directly. Relative paths use the
+supplied `--mrc_data_dir`, or the STAR directory if omitted. A trailing slash
+is unnecessary. Run `train.py` with your inputs and `--check-inputs` before
+launching a long job; it does not construct the diffusion model.
 
 ## Particle sign mismatch
 
@@ -94,6 +91,22 @@ An equal atom count is necessary but not sufficient; ordering must also match.
 
 ## Protenix or CUDA kernel compilation errors
 
+If the traceback ends in `Error building extension 'fast_layer_norm_cuda_v2'`,
+read the compiler error above it. In the fresh-installation test, PyTorch's
+headers reported `We need GCC 9 or later`: the batch job had selected an old
+system compiler because its GNU module was missing. Loading the site's
+`gnu/12.2.0` module and setting `CC`/`CXX` resolved this failure. See
+[compiler setup](installation.md#prepare-the-compiler-in-the-job-environment).
+
+A preceding `ModuleNotFoundError` for this extension can be the trigger for
+its first build; it does not by itself mean that Protenix was not installed.
+Successful `pip check`, basic imports or CPU tests do not validate all CUDA
+extensions. If smoke fails before validation, absence of `validation.json`
+does not mean success: inspect the training log and recorded exception.
+After correcting the toolchain, use a new smoke output directory and retain
+the failed report. There is no need to reinstall the whole Python environment
+merely to select the correct system compiler.
+
 The custom model modules can depend on Triton, cuequivariance and compiled CUDA/C++ extensions. Confirm:
 
 - the NVIDIA driver supports the installed CUDA-enabled PyTorch build;
@@ -110,4 +123,8 @@ Newer PyTorch versions use stricter deserialization defaults. The current `infer
 
 ## Initial prediction differs across runs
 
-Confirm that the same cached tensor file, model state, diffusion schedule and software environment are used. `get_pdb.py` resets NumPy and PyTorch seeds to 42. Differences may still arise if compiled kernels or deterministic settings differ across GPU architectures.
+Confirm that the same cached tensor file, model state, diffusion schedule and software environment are used. `get_pdb.py` replays a new checkpoint's saved sampling state unless an explicit seed is supplied; older results use their recorded diffusion seed or fall back to 42. Keep `--seed` and `--rng-mode` consistent. Differences may still arise if compiled kernels or deterministic settings differ across GPU architectures.
+
+## Missing components.cif or model checkpoint
+
+Export `PROTENIX_ROOT_DIR` before Python starts, pointing to the directory containing `common/` and `checkpoint/`. An inference completion report with failed targets does not constitute a completed prediction stage; resolve its error and use a new output directory. See [installation](installation.md).

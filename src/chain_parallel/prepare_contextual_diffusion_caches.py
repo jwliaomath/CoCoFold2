@@ -334,16 +334,16 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser = subparsers.add_parser(
         "inspect", help="print asym_id, token, atom, and tensor-shape metadata"
     )
-    inspect_parser.add_argument("--cache", required=True)
-    inspect_parser.add_argument("--output-json")
+    inspect_parser.add_argument("--cache", required=True, help='Existing diffusion cache to inspect on CPU. Default: %(default)s.')
+    inspect_parser.add_argument("--output-json", help='Optional inspection JSON output; otherwise print the inspection. Default: %(default)s.')
     inspect_parser.set_defaults(function=command_inspect)
 
     split_parser = subparsers.add_parser(
         "split", help="slice contextual token/pair features and rebuild atom caches"
     )
-    split_parser.add_argument("--spec", required=True)
-    split_parser.add_argument("--device", default="cpu")
-    split_parser.add_argument("--overwrite", action="store_true", default=False)
+    split_parser.add_argument("--spec", required=True, help='Contextual split YAML; paths inside it are resolved relative to that YAML. Default: %(default)s.')
+    split_parser.add_argument("--device", default="cpu", help='PyTorch device for this operation; distributed CUDA ranks use LOCAL_RANK. Default: %(default)s.')
+    split_parser.add_argument("--overwrite", action="store_true", default=False, help='Allow replacing existing prepared cache outputs; disabled unless explicitly supplied. Default: %(default)s.')
     split_parser.set_defaults(function=command_split)
     return parser
 

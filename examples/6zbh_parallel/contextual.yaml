@@ -1,0 +1,12 @@
+schema_version: 1
+# Resolve these paths from this file. Check local CIF chain names before use.
+components:
+  - id: chain_A_contextual
+    rank: 0
+    diffusion_data_dir: inputs/cache/6zbhA_contextual_diffusion_data.pth
+    cif_path: inputs/fitted/6zbhA_contextual_fitted_42.cif
+  - id: chains_BCD_contextual
+    rank: 1
+    diffusion_data_dir: inputs/cache/6zbhBCD_contextual_diffusion_data.pth
+    cif_path: inputs/fitted/6zbhBCD_contextual_fitted_42.cif
+    chain_id_map: {A: B, B: C, C: D}
