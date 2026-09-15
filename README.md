@@ -1,5 +1,7 @@
 # CoCoFold2
 
+**Preprint:** [CoCoFold2: scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data](https://doi.org/10.65215/LTSpreprints.2026.09.15.000338) · LangTaoSha, 2026.
+
 CoCoFold2 refines a protein structure against cryo-EM particle observations
 using a frozen Protenix-v1 diffusion prior. It optimizes a target-specific latent
 perturbation and, by default, Gaussian renderer amplitudes and widths. Network
@@ -85,8 +87,23 @@ pending. See [installation](docs/installation.md) and
 
 ## Citation and license
 
-The existing author and repository metadata are in [CITATION.cff](CITATION.cff).
-The planned release is CoCoFold2 v1.0.0. A manuscript DOI is not yet available
-and is omitted from the citation metadata.
+The [CoCoFold2 preprint](https://doi.org/10.65215/LTSpreprints.2026.09.15.000338) is now available on
+[LangTaoSha Preprint Server](https://langtaosha.org.cn/lts/en/preprint/view/338)
+(15 September 2026). Please cite the manuscript when using CoCoFold2:
+
+Liao, J., Hu, M., & Bao, C. (2026). CoCoFold2: scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data. LangTaoSha Preprint Server. https://doi.org/10.65215/LTSpreprints.2026.09.15.000338
+
+```bibtex
+@article{liao2026cocofold2,
+  title = {CoCoFold2: scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data},
+  author = {Liao, Junwen and Hu, Mingxu and Bao, Chenglong},
+  journal = {LangTaoSha Preprint Server},
+  year = {2026},
+  doi = {10.65215/LTSpreprints.2026.09.15.000338},
+  url = {https://doi.org/10.65215/LTSpreprints.2026.09.15.000338}
+}
+```
+
+Machine-readable author and citation metadata are in [CITATION.cff](CITATION.cff).
 The code retains its [Apache-2.0 license](LICENSE); upstream software and data
 retain their respective terms and attribution requirements.
