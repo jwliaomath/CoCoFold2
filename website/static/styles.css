@@ -6,3 +6,13 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.tutorial{transition:none}}
 
 .paper-announcement{font-size:14px;margin:20px 0 0}.paper-announcement a{font-weight:700}.paper-announcement span{display:block;color:var(--body);font-size:12px;margin-top:4px}.paper-section{border-top:1px solid var(--line)}.paper-figure{margin:36px 0 0;padding:16px;background:white;border:1px solid var(--line);border-radius:8px}.paper-figure img{display:block;width:100%;height:auto}.paper-figure-tall{max-width:850px;margin-left:auto;margin-right:auto}.paper-figure figcaption{font-size:14px;line-height:1.65;color:var(--body);padding:16px 8px 4px}.paper-figure figcaption strong{color:var(--ink)}.paper-figure figcaption a{white-space:nowrap}@media(max-width:700px){.paper-figure{padding:6px}.paper-figure figcaption{font-size:13px;padding:12px 6px}.header nav{flex-wrap:wrap}}
+/* Limit paper figure widths while keeping them responsive. */
+.paper-figure {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.paper-figure-tall {
+  max-width: 600px;
+}
