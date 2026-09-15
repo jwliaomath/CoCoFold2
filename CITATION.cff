@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use CoCoFold2, please cite the CoCoFold2 manuscript and this software release."
 title: "CoCoFold2: scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data"
 type: software
-version: "1.0.0"
+version: "1.0.1"
 authors:
   - family-names: Liao
     given-names: Junwen
@@ -27,3 +27,7 @@ preferred-citation:
       given-names: Mingxu
     - family-names: Bao
       given-names: Chenglong
+  journal: "LangTaoSha Preprint Server"
+  year: 2026
+  doi: "10.65215/LTSpreprints.2026.09.15.000338"
+  url: "https://doi.org/10.65215/LTSpreprints.2026.09.15.000338"

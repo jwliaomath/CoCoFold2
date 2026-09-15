@@ -87,7 +87,11 @@ def test_t0_dependency_files_preserve_full_stack_and_separate_cpu():
 def test_t0_citation_has_confirmed_version_and_no_placeholder_doi():
     citation=yaml.safe_load((ROOT/'CITATION.cff').read_text())
     assert citation['authors'] and citation['repository-code']
-    assert citation['version']=='1.0.0'
+    assert citation['version']=='1.0.1'
     assert 'doi' not in citation
-    assert 'doi' not in citation.get('preferred-citation',{})
+    paper = citation['preferred-citation']
+    assert paper['doi'] == '10.65215/LTSpreprints.2026.09.15.000338'
+    assert paper['url'] == 'https://doi.org/' + paper['doi']
+    assert paper['year'] == 2026
+    assert paper['journal'] == 'LangTaoSha Preprint Server'
     assert 'TODO_DOI' not in (ROOT/'CITATION.cff').read_text()

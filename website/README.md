@@ -39,3 +39,11 @@ separate from the CPU/GPU dependencies. The workflow rebuilds on each main
 update, so edits to the original Markdown are reflected in the site.
 
 The homepage schematic is illustrative; it does not contain experimental data.
+
+## Paper figures
+
+`static/paper-figure1.webp` and `static/paper-figure3.webp` are losslessly encoded
+web renderings of Figures 1 and 3 from the authors' preprint (https://doi.org/10.65215/LTSpreprints.2026.09.15.000338).
+Their content has not been redrawn or altered. These figure assets are not
+covered by the software Apache-2.0 license; see the source publication for
+figure reuse terms.
