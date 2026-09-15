@@ -1,11 +1,11 @@
-# Validation scope and release checklist
+# Validation scope and release information
 
 ## Recorded evidence (2026-09-14)
 
-The author reported successful real Protenix-v1 tests in the existing server
-environment. These reports are accepted as author-provided evidence; they are
-not a claim that CI reproduced them. A separate fresh-installation acceptance
-is recorded below; it does not repeat every earlier model test.
+Real Protenix-v1 tests were completed in the development server environment,
+with additional installation and smoke testing in a fresh Linux environment.
+These GPU tests were run separately from CI. The fresh-installation checks
+did not repeat every earlier model test.
 
 | Scope | Evidence | Limit |
 |---|---|---|
@@ -40,27 +40,29 @@ was 47965.59/59394.84 MiB for ranks 0/1; reserved memory was 78834/78780 MiB.
 These measurements describe this case and environment, not minimum hardware
 requirements or a performance guarantee.
 
-Independent and Contextual paths share public controls but have different
-conditioning. A real long Independent run has not been accepted here. Random,
-fine-tuning and the main heterogeneity experiments are outside this release.
+Independent and Contextual paths share public controls but use different
+conditioning. The validation recorded here does not include a long
+real-model Independent-component run. The resampled-stochasticity and
+diffusion fine-tuning ablation code is not included in this release.
 
-## Remaining release gates
+## Continuous validation and release information
 
-- Retain the accepted server CPU report with its source hashes. For subsequent
-  changes, run the affected checks on the independent candidate; documentation
-  edits do not require repeating accepted real-weight training. CPU substitute
-  decoders must remain labelled.
-- Run the new CI workflow after pushing the reviewed public repository; local
-  tests do not establish a successful GitHub Actions run.
-- Preserve the accepted fresh-installation reports and the earlier working
-  environment. Each new platform still needs its own installation validation;
-  see [installation](installation.md).
-- Author reviews the final public file list, documentation, citation metadata,
-  license notices and GitHub diff. The planned release version is v1.0.0;
-  confirm the release after CI passes. No manuscript DOI is available, so it is
-  omitted from the citation metadata.
-- Only after that review, publish a version and separately agree on a project
-  page and documentation site. This candidate does not publish either.
+Automated CPU tests and website checks run through
+[GitHub Actions](https://github.com/jwliaomath/CoCoFold2/actions).
+Real-model GPU tests and manual structural assessments are recorded
+separately above.
+
+For subsequent changes, run the relevant checks and retain their reports.
+Documentation-only changes do not require repeating real-weight training.
+CPU tests using substitute decoders do not establish real-model behavior.
+Each new platform requires installation validation;
+see [installation](installation.md).
+
+The manuscript DOI and software version are recorded in
+[CITATION.cff](../CITATION.cff). Published versions are available on the
+[Releases page](https://github.com/jwliaomath/CoCoFold2/releases).
+The [project website](https://jwliaomath.github.io/CoCoFold2/)
+provides an overview and tutorials.
 
 ## Build the public candidate
 
