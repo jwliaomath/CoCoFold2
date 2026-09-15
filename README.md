@@ -2,6 +2,8 @@
 
 **Preprint:** [CoCoFold2: scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data](https://doi.org/10.65215/LTSpreprints.2026.09.15.000338) · LangTaoSha, 2026.
 
+**Project website and tutorials:** https://jwliaomath.github.io/CoCoFold2/
+
 CoCoFold2 refines a protein structure against cryo-EM particle observations
 using a frozen Protenix-v1 diffusion prior. It optimizes a target-specific latent
 perturbation and, by default, Gaussian renderer amplitudes and widths. Network
@@ -24,10 +26,11 @@ Follow [installation](docs/installation.md) to create a separate CPU environment
 python tests/run_public_tests.py --output results/first_cpu_check
 ```
 
-This checks an independent public copy without Protenix, weights, private code
-or GPUs. Each test and a total pass/fail summary are written to JSON, Markdown
-and JUnit XML. An analytic decoder is used where needed; this is not a
-real-model test. See [test levels and commands](tests/README_public_tests.md).
+This tests an isolated copy of the public code without requiring Protenix,
+model weights or GPUs. Each test and a total pass/fail summary are written
+to JSON, Markdown and JUnit XML. An analytic decoder is used where needed;
+this is not a real-model test.
+See [test levels and commands](tests/README_public_tests.md).
 
 ## Try the small real-model example
 
@@ -35,8 +38,8 @@ Use the [7ZDT/7ZD5 walkthrough](examples/7zdt_7zd5/README.md): generate a 3 Å
 map from the supplied 7ZD5 CIF, simulate 1000 SNR=1 particles, predict with
 Protenix-v1, place the prediction in the map, then run smoke and refine stages.
 The example explicitly freezes both GMM parameter groups. The general trainer
-keeps GMM learning enabled by default. The author accepted the real smoke and
-refine results in the existing server environment.
+keeps GMM learning enabled by default. The smoke and refinement stages were
+tested with real Protenix-v1 weights in the development server environment.
 
 For experimental particle inputs, see [data requirements](docs/data_requirements.md)
 and the [single-GPU 6ZBH tutorial](docs/particle_tutorial_6zbh.md).
@@ -69,21 +72,25 @@ and a merged CIF.
 
 ## Validation and limits
 
-[Validation scope](docs/release_validation.md) separates CPU tests, real model
-checks and manual structural review. The accepted Contextual 6ZBH long case
-covers the first **four complete epochs**, not completion of the original
-ten-epoch job. Structure/map agreement and Cα RMSD remain manual assessments.
-Changing microbatch size can change legacy loss scaling, so preserve it in
-comparisons. Half-map weighting options currently do not enter the active
-particle FRC objective.
+Validation includes automated CPU tests, real-model smoke and refinement
+runs, checkpoint/restart checks, and manual structural inspection.
+The Contextual 6ZBH two-GPU workflow was checked through four complete
+epochs. See [validation details](docs/release_validation.md) for the
+tested configurations and scope.
 
-Random, fine-tuning and the main heterogeneity experiment code are outside this
-public release. Weights, MSA resources and experimental particle stacks are not
-bundled. The author accepted a fresh Linux installation, CPU tests and a short
-real-weight smoke run with GNU 12.2.0 configured for extension compilation.
-This does not establish support on every platform; final GitHub review remains
-pending. See [installation](docs/installation.md) and
-[troubleshooting](docs/troubleshooting.md).
+Changing microbatch size can change loss scaling, so keep it consistent
+across comparisons. Half-map weighting options currently do not affect
+the particle FRC objective.
+
+The resampled-stochasticity and diffusion fine-tuning ablation code is
+not included in this release. Model weights, MSA resources and experimental
+particle stacks must be obtained separately.
+
+Installation and real-weight smoke testing were completed in a fresh
+Linux environment using GNU 12.2.0 for extension compilation.
+See [installation](docs/installation.md) and
+[troubleshooting](docs/troubleshooting.md) for environment requirements
+and known issues.
 
 ## Citation and license
 
