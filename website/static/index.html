@@ -3,101 +3,84 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CoCoFold2 — Latent refinement from limited-particle cryo-EM</title>
   <meta name="description" content="CoCoFold2: scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data.">
-  <meta name="theme-color" content="#163c37">
-  <title>CoCoFold2 — Structure refinement from limited-particle cryo-EM</title>
+  <meta property="og:title" content="CoCoFold2">
+  <meta property="og:description" content="Scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data.">
+  <meta property="og:image" content="https://jwliaomath.github.io/CoCoFold2/paper-figure1.webp">
+  <link rel="canonical" href="https://jwliaomath.github.io/CoCoFold2/">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
   <script src="site.js" defer></script>
 </head>
-<body>
+<body class="academic">
   <a class="skip" href="#main">Skip to content</a>
-  <header class="header wrap">
-    <a class="brand" href="#" aria-label="CoCoFold2 home"><img src="icon.svg" width="32" height="32" alt="">CoCoFold<span>2</span></a>
-    <nav aria-label="Main navigation">
-      <a href="#paper">Paper</a><a href="#method">Method</a><a href="docs/installation.html">Docs</a><a href="#cite">Cite</a>
-      <a class="nav-code" href="https://github.com/jwliaomath/CoCoFold2">GitHub <span aria-hidden="true">↗</span></a>
-    </nav>
+  <header class="academic-nav">
+    <a href="#" class="academic-brand">CoCoFold2</a>
+    <nav aria-label="Main navigation"><a href="#method">Method</a><a href="#results">Results</a><a href="#cite">Citation</a><a href="https://jwliaomath.gitbook.io/cocofold2/">User Guide ↗</a></nav>
   </header>
   <main id="main">
-    <section class="hero wrap" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <a class="release" href="https://github.com/jwliaomath/CoCoFold2/releases/tag/v1.0.1"><span class="dot"></span> SOFTWARE RELEASE · v1.0.1 <span aria-hidden="true">↗</span></a>
-        <h1 id="hero-title">A structural prior.<br><em>An experimental fit.</em></h1>
-        <p class="subtitle">CoCoFold2: scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data.</p>
-        <p class="intro">Connect a frozen Protenix-v1 diffusion prior to particle observations. Refine a target-specific latent perturbation while keeping the network weights fixed.</p>
-        <div class="actions"><a class="button primary" href="#start">Start refining <span aria-hidden="true">→</span></a><a class="button secondary" href="https://github.com/jwliaomath/CoCoFold2">Explore the code <span aria-hidden="true">↗</span></a></div>
-        <p class="paper-announcement"><a href="https://doi.org/10.65215/LTSpreprints.2026.09.15.000338">Read the preprint ↗</a> <span>LangTaoSha · 15 September 2026</span></p>
-        <p class="authors">Junwen Liao · Mingxu Hu · Chenglong Bao</p>
+    <section class="paper-hero" aria-labelledby="paper-title">
+      <p class="paper-label">COMPUTATIONAL STRUCTURAL BIOLOGY</p>
+      <h1 id="paper-title"><span>CoCoFold2</span>Scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data</h1>
+      <p class="paper-authors"><a href="https://jwliaomath.github.io/">Junwen Liao</a><span>·</span><a href="https://smart.org.cn/en/faculty/humingxu">Mingxu Hu</a><span>·</span><a href="https://matbc.github.io/">Chenglong Bao</a></p>
+      <p class="paper-venue">LangTaoSha Preprint Server · 2026</p>
+      <div class="paper-actions">
+        <a href="https://doi.org/10.65215/LTSpreprints.2026.09.15.000338"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H5v18h14V8z"/><path d="M14 3v5h5M8 12h8M8 16h6"/></svg>Preprint</a>
+        <a href="https://github.com/jwliaomath/CoCoFold2"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="currentColor"><path d="M12 .75a11.25 11.25 0 0 0-3.558 21.923c.563.104.769-.244.769-.542 0-.267-.01-.975-.015-1.914-3.13.68-3.79-1.508-3.79-1.508-.512-1.3-1.25-1.647-1.25-1.647-1.023-.7.078-.686.078-.686 1.13.08 1.725 1.16 1.725 1.16 1.005 1.722 2.637 1.225 3.28.937.103-.728.393-1.225.715-1.507-2.5-.285-5.128-1.25-5.128-5.565 0-1.23.44-2.232 1.16-3.02-.117-.285-.503-1.43.11-2.98 0 0 .945-.303 3.094 1.154A10.8 10.8 0 0 1 12 6.176c.956.005 1.92.129 2.82.379 2.148-1.457 3.091-1.154 3.091-1.154.615 1.55.229 2.695.113 2.98.722.788 1.158 1.79 1.158 3.02 0 4.326-2.633 5.277-5.14 5.556.405.35.767 1.04.767 2.096 0 1.514-.014 2.735-.014 3.106 0 .3.203.65.774.54A11.25 11.25 0 0 0 12 .75Z"/></svg>Code</a>
+        <a class="guide-action" href="https://jwliaomath.gitbook.io/cocofold2/"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h15v18H5a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3ZM2 18a3 3 0 0 1 3-3h15M7 7h8M7 10h8"/></svg>User Guide</a>
       </div>
-      <figure class="method-figure">
-        <svg viewBox="0 0 480 420" role="img" aria-labelledby="diagram-title diagram-description">
-          <title id="diagram-title">Refining the latent representation with particle observations</title>
-          <desc id="diagram-description">A target-specific latent perturbation enters a frozen diffusion prior, producing a structure. A Gaussian renderer generates projections for comparison with observed particles. The particle objective guides latent refinement. This is a conceptual diagram, not experimental data.</desc>
-          <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#64867e"/></marker></defs>
-          <text x="28" y="35" class="svg-kicker">FROM PRIOR TO OBSERVATIONS</text>
-          <rect x="28" y="66" width="136" height="72" rx="10" class="svg-light"/>
-          <text x="96" y="96" text-anchor="middle" class="svg-title">Latent + Δz</text><text x="96" y="119" text-anchor="middle" class="svg-small">target-specific update</text>
-          <path d="M164 102H199" class="connector"/>
-          <rect x="207" y="66" width="245" height="72" rx="10" class="svg-dark"/>
-          <text x="329" y="95" text-anchor="middle" class="svg-white">Frozen diffusion prior</text><text x="329" y="118" text-anchor="middle" class="svg-pale">Protenix-v1 · fixed stochasticity</text>
-          <path d="M330 138V168" class="connector"/>
-          <rect x="207" y="177" width="245" height="71" rx="10" class="svg-light"/>
-          <path d="M229 212c16-36 34 38 50-3s22 31 35 1" fill="none" stroke="#287766" stroke-width="4" stroke-linecap="round"/>
-          <text x="384" y="209" text-anchor="middle" class="svg-title">Structure</text><text x="384" y="232" text-anchor="middle" class="svg-small">Gaussian renderer</text>
-          <path d="M330 248V278" class="connector"/>
-          <rect x="207" y="287" width="245" height="72" rx="10" class="svg-light"/>
-          <text x="329" y="316" text-anchor="middle" class="svg-title">Particle objective</text><text x="329" y="340" text-anchor="middle" class="svg-small">projections ↔ observations</text>
-          <path d="M207 325H96V151" class="connector feedback"/>
-          <text x="28" y="250" class="svg-small">Refine Δz</text>
-          <text x="28" y="399" class="svg-footnote">SCHEMATIC · NOT EXPERIMENTAL DATA</text>
-        </svg>
-        <figcaption>The prior stays frozen. The latent representation adapts.</figcaption>
-      </figure>
+      <p class="paper-tagline">A frozen structural prior, guided by experimental particles.</p>
     </section>
-
-    <div class="principles wrap" aria-label="Key capabilities"><span>Frozen network weights</span><span>Single-GPU &amp; component-parallel</span><span>Structured experiment records</span></div>
-
-    <section class="section wrap" id="method" aria-labelledby="method-title">
-      <div class="section-heading"><p class="eyebrow">THE METHOD</p><h2 id="method-title">Refinement, in latent space.</h2><p>Use a learned structural prior with informative experimental observations.</p></div>
-      <div class="features">
-        <article><span class="number">01 / CONDITION</span><h3>Start from a prediction</h3><p>Generate a Protenix-v1 prediction and diffusion cache. Place a compatible initial structure in the experimental coordinate frame before refinement.</p></article>
-        <article><span class="number">02 / REFINE</span><h3>Let the particles guide it</h3><p>Optimize the latent perturbation against particle observations. Gaussian renderer amplitudes and widths are learned by default and can both be frozen.</p></article>
-        <article><span class="number">03 / SCALE</span><h3>Work across components</h3><p>Assign one component cache to each GPU. A component can contain multiple chains; optional per-chain rigid alignment is separate from GPU assignment.</p></article>
+    <section class="paper-content" id="method" aria-labelledby="method-title">
+      <h2 id="method-title">From predictions to particle-guided structures</h2>
+      <p class="paper-lead">CoCoFold2 connects a frozen Protenix-v1 diffusion prior to cryo-EM particle observations. It optimizes a target-specific latent perturbation while keeping network weights fixed.</p>
+      <figure class="research-figure">
+        <a href="paper-figure1.webp"><img src="paper-figure1.webp" width="1800" height="1265" alt="CoCoFold2 overview: limited-particle observations guide latent refinement through a frozen diffusion prior."></a>
+        <figcaption><strong>Method overview.</strong> Deterministic latent refinement connects predicted atomic structures to experimental particles through differentiable rendering. <a href="paper-figure1.webp">View full-size figure ↗</a></figcaption>
+      </figure>
+      <div class="method-notes">
+        <article><h3>Frozen diffusion prior</h3><p>Refine the target-specific latent representation without fine-tuning the pretrained network.</p></article>
+        <article><h3>Particle observations</h3><p>Use upstream particle poses and CTF estimates to connect structures to experimental images.</p></article>
+        <article><h3>Component-parallel refinement</h3><p>Distribute component caches across GPUs using Independent or Contextual conditioning.</p></article>
       </div>
-      <aside class="requirements"><strong>Before you begin</strong><p>CoCoFold2 requires a sufficiently accurate initial prior, informative observations, and upstream particle poses and CTF estimates. It does not estimate poses or CTF parameters. <a href="https://github.com/jwliaomath/CoCoFold2/blob/main/docs/data_requirements.md">Input requirements <span aria-hidden="true">↗</span></a></p></aside>
     </section>
-
-    <section class="section wrap paper-section" id="paper" aria-labelledby="paper-title">
-      <div class="section-heading"><p class="eyebrow">FROM THE PAPER</p><h2 id="paper-title">Method and structural examples.</h2><p>Selected figures from the CoCoFold2 preprint. <a href="https://doi.org/10.65215/LTSpreprints.2026.09.15.000338">Read the full paper and supplementary materials ↗</a></p></div>
-      <figure class="paper-figure">
-        <a href="paper-figure1.webp" aria-label="Open Figure 1 at full size"><img src="paper-figure1.webp" width="1800" height="1265" loading="lazy" decoding="async" alt="Figure 1: limited-particle structure determination and the CoCoFold2 latent-refinement framework with frozen network parameters."></a>
-        <figcaption><strong>Figure 1 · Deterministic latent refinement.</strong> Particle observations guide a target-specific latent perturbation while the pretrained diffusion prior remains frozen. <a href="paper-figure1.webp">Open full-size figure ↗</a></figcaption>
+    <section class="paper-content results-section" id="results" aria-labelledby="results-title">
+      <h2 id="results-title">Refining large assemblies</h2>
+      <p class="paper-lead">Component-parallel refinement supports structural refinement across multiple GPUs. The preprint presents Independent and Contextual conditioning strategies and structural examples for MSP-1 and TRPM8.</p>
+      <figure class="research-figure result-figure">
+        <a href="paper-figure3.webp"><img src="paper-figure3.webp" width="1526" height="1800" loading="lazy" alt="Component conditioning strategies and initial and refined structures for MSP-1, PDB 6ZBH, and TRPM8, PDB 6O77."></a>
+        <figcaption><strong>Component conditioning and structural examples.</strong> MSP-1 (PDB 6ZBH) and TRPM8 (PDB 6O77). See the <a href="https://doi.org/10.65215/LTSpreprints.2026.09.15.000338">preprint</a> for the experimental conditions, evaluation and limitations. <a href="paper-figure3.webp">View full-size figure ↗</a></figcaption>
       </figure>
-      <figure class="paper-figure paper-figure-tall">
-        <a href="paper-figure3.webp" aria-label="Open Figure 3 at full size"><img src="paper-figure3.webp" width="1526" height="1800" loading="lazy" decoding="async" alt="Figure 3: independent-component and contextual-component conditioning, with initial and refined structures for MSP-1 and TRPM8."></a>
-        <figcaption><strong>Figure 3 · Component-parallel refinement.</strong> Two conditioning strategies and structural examples for MSP-1 (PDB 6ZBH) and TRPM8 (PDB 6O77). These examples demonstrate refinement of large assemblies; see the paper for evaluation and limitations. <a href="paper-figure3.webp">Open full-size figure ↗</a></figcaption>
-      </figure>
-      <p class="resource-note">Figures: Liao, Hu &amp; Bao (2026), CoCoFold2 preprint. Figure reuse is governed by the terms of the <a href="https://langtaosha.org.cn/lts/en/preprint/view/338">source publication</a>; the software license applies to code.</p>
+      <p class="scope-note">CoCoFold2 requires a sufficiently accurate initial prior and informative experimental observations. Particle poses and CTF parameters are supplied upstream; CoCoFold2 does not estimate them.</p>
     </section>
-
-    <section class="tutorial-section" id="start" aria-labelledby="start-title"><div class="wrap section">
-      <div class="section-heading"><p class="eyebrow">GET STARTED</p><h2 id="start-title">A small case. A clear next step.</h2><p>Install the environment, check the basics, then try refinement.</p></div>
-      <div class="tutorial-grid">
-        <a class="tutorial" href="docs/installation.html"><span class="tag">START HERE</span><h3>Install &amp; check <span aria-hidden="true">↗</span></h3><p>Set up the dependencies and run CPU checks before loading model weights.</p><span class="text-link">Installation guide</span></a>
-        <a class="tutorial" href="docs/minimal-case.html"><span class="tag">SINGLE GPU</span><h3>The minimal example <span aria-hidden="true">↗</span></h3><p>Try the 7ZDT/7ZD5 workflow with 1,000 simulated particles, followed by smoke and refine stages.</p><span class="text-link">7ZDT / 7ZD5 walkthrough</span></a>
-        <a class="tutorial" href="docs/parallel.html"><span class="tag">TWO GPUS</span><h3>Component refinement <span aria-hidden="true">↗</span></h3><p>Follow the Contextual 6ZBH 1+3 example. Export component structures and a merged CIF each epoch.</p><span class="text-link">6ZBH parallel walkthrough</span></a>
+    <section class="paper-content getting-started" id="start" aria-labelledby="start-title">
+      <h2 id="start-title">Try CoCoFold2</h2>
+      <p>Start with a small example, then adapt the workflow to your data. The user guide includes input preparation, parameters, saved outputs and restart instructions.</p>
+      <div class="guide-links">
+        <a href="https://jwliaomath.gitbook.io/cocofold2/getting-started/installation"><span>01</span>Install the software ↗</a>
+        <a href="https://jwliaomath.gitbook.io/cocofold2/getting-started/7zdt_7zd5"><span>02</span>Run the minimal example ↗</a>
+        <a href="https://jwliaomath.gitbook.io/cocofold2/refinement-workflows/6zbh_parallel"><span>03</span>Refine across two GPUs ↗</a>
       </div>
-      <p class="resource-note">Model weights, MSA resources and experimental particle stacks are obtained separately. Follow each guide for the required inputs.</p>
-    </div></section>
-
-    <section class="section wrap records" aria-labelledby="records-title">
-      <div><p class="eyebrow">BUILT FOR EXPERIMENTS</p><h2 id="records-title">Keep the context<br>with the coordinates.</h2><p>Capture commands, resolved configurations, metrics and checkpoints alongside your structures. Export CIF or PDB and resume from complete epoch checkpoints.</p><a class="text-link" href="https://github.com/jwliaomath/CoCoFold2/blob/main/docs/outputs_and_restart.md">Outputs &amp; restart guide <span aria-hidden="true">↗</span></a></div>
-      <div class="resource-list"><a href="https://github.com/jwliaomath/CoCoFold2/blob/main/docs/cli_reference.md"><span>Parameter reference</span><span aria-hidden="true">↗</span></a><a href="https://github.com/jwliaomath/CoCoFold2/blob/main/docs/block_rigid_alignment.md"><span>Per-chain alignment</span><span aria-hidden="true">↗</span></a><a href="https://github.com/jwliaomath/CoCoFold2/blob/main/docs/release_validation.md"><span>Validation scope &amp; limitations</span><span aria-hidden="true">↗</span></a><a href="https://github.com/jwliaomath/CoCoFold2/issues"><span>Questions &amp; issue reports</span><span aria-hidden="true">↗</span></a></div>
     </section>
-
-    <section class="citation wrap" id="cite" aria-labelledby="cite-title"><div><p class="eyebrow">CITATION</p><h2 id="cite-title">Using CoCoFold2?</h2><p>Please cite the CoCoFold2 preprint when using this work.</p><a class="text-link" href="https://github.com/jwliaomath/CoCoFold2/blob/main/CITATION.cff">Citation metadata <span aria-hidden="true">↗</span></a></div><div class="citation-text"><p id="citation">Liao, J., Hu, M., &amp; Bao, C. (2026). CoCoFold2: scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data. LangTaoSha Preprint Server. https://doi.org/10.65215/LTSpreprints.2026.09.15.000338</p><button id="copy-citation" type="button" hidden>Copy citation</button><span id="copy-status" role="status" aria-live="polite"></span></div></section>
+    <section class="paper-content paper-citation" id="cite" aria-labelledby="citation-title">
+      <h2 id="citation-title">Citation</h2>
+      <p>If you use CoCoFold2, please cite the preprint:</p>
+      <pre><code id="citation">@article{liao2026cocofold2,
+  title = {CoCoFold2: scalable latent refinement of diffusion-based protein structure predictions from limited-particle cryo-EM data},
+  author = {Liao, Junwen and Hu, Mingxu and Bao, Chenglong},
+  journal = {LangTaoSha Preprint Server},
+  year = {2026},
+  doi = {10.65215/LTSpreprints.2026.09.15.000338},
+  url = {https://doi.org/10.65215/LTSpreprints.2026.09.15.000338}
+}</code></pre>
+      <button id="copy-citation" type="button" hidden>Copy BibTeX</button><span id="copy-status" role="status" aria-live="polite"></span>
+    </section>
   </main>
-  <footer class="footer wrap"><span>CoCoFold2 <span class="footer-muted">/ Open-source research software</span></span><a href="https://github.com/jwliaomath/CoCoFold2/blob/main/LICENSE">Code: Apache-2.0</a><a href="https://github.com/jwliaomath/CoCoFold2/releases/tag/v1.0.1">v1.0.1 <span aria-hidden="true">↗</span></a></footer>
+  <footer class="academic-footer">
+    <p><a href="https://github.com/jwliaomath/CoCoFold2/issues">Questions &amp; feedback</a> · <a href="https://github.com/jwliaomath/CoCoFold2/releases">Software releases</a> · <a href="https://github.com/jwliaomath/CoCoFold2/blob/main/LICENSE">Code license: Apache-2.0</a></p>
+    <p>Figures from the CoCoFold2 preprint; reuse follows the <a href="https://langtaosha.org.cn/lts/en/preprint/view/338">source publication's terms</a>.</p>
+    <p>Layout inspired by the <a href="https://github.com/eliahuhorwitz/Academic-project-page-template">Academic Project Page Template</a>. Implemented with local styles and assets.</p>
+  </footer>
 </body>
 </html>
