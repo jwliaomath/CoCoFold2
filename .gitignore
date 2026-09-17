@@ -2,10 +2,15 @@
 # Unknown research files, results, weights and local scripts remain ignored.
 # This does not remove tracked files or clean existing Git history.
 /*
+!/.gitbook.yaml
+!/gitbook-docs.yaml
+!/SUMMARY.md
 !/.github/
 /.github/*
 !/docs/
 /docs/*
+!/docs/user_guide.md
+!/docs/parameter_guide.md
 !/examples/
 /examples/*
 !/src/

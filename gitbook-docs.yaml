@@ -1,0 +1,12 @@
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+site:
+  title: CoCoFold2 User Guide
+  structure:
+    - type: space
+      key: cocofold2-user-guide
+      title: CoCoFold2 User Guide
+      path: guide
+      default: true
+      content:
+        directory: ./
+        language: en
