@@ -30,6 +30,10 @@ The repository is executed directly from its root. Do not use `pip install -e .`
 
 Set `PROTENIX_ROOT_DIR` before starting Python to a directory containing the compatible Protenix 1.0.2 resources (see [installation](installation.md)):
 
+```bash
+export PROTENIX_ROOT_DIR=/absolute/path/to/protenix_resources
+```
+
 ```text
 checkpoint/
 common/
@@ -60,6 +64,11 @@ Download and prepare the public data using:
 wget -nH -m ftp://ftp.ebi.ac.uk/empiar/world_availability/10437/data/particles/MSP1_altconf5/
 ```
 
+This download command does not create the example layout above. Prepare your
+STAR file and particle stacks under your chosen data root, or change the command
+paths below to match their actual locations. `366.star` is the example's prepared
+STAR filename, not a file that this download command is guaranteed to produce.
+
 Verify that `rlnImageName` paths in `366.star` resolve when prefixed with `data/6zbh/particles/`. Absolute STAR image paths are used directly. Relative paths resolve under `--mrc_data_dir`, or under the STAR directory when that option is omitted; no trailing slash is required.
 
 Choose and record the particle subset for your experiment; the filename does not encode its row count.
@@ -78,6 +87,11 @@ python -u src/inference.py \
 ```
 
 The output path is a directory and does not require a trailing slash. Single-target/single-seed runs retain the cache name below; multiple targets or seeds use separate sample/seed directories. Existing caches are refused rather than overwritten.
+
+Use a single-target, single-seed inference input for the filename in this
+walkthrough. The configured Protenix prediction seed is 101 by default; the
+refinement/export diffusion seed defaults to 42. These control different stages
+and need not be identical. Record any seed overrides with the run configuration.
 
 The expected cache is:
 
@@ -106,6 +120,12 @@ python src/get_pdb.py \
 ```text
 outputs/6zbh_initial/6ZBH_initial_prediction.pdb
 ```
+
+This PDB filename is intentional: supplying a template without an explicit output
+format retains the historical export behavior. Add `--output-format cif` to export
+`6ZBH_initial_prediction.cif` instead. Template-free export is also supported by
+omitting `--cif_path` when the cache contains the required atom identities; it
+defaults to CIF. Training still needs the fitted reference CIF from Stage E.
 
 Open this file in a molecular viewer and verify that the topology is not scrambled before proceeding.
 
@@ -185,6 +205,14 @@ Each epoch checkpoint contains:
 CIF is the training default; `--output-format pdb` or `both` is optional. The initial `checkpoint__.cif` is written before optimization. The `.pth` files can be large and should not normally be committed to Git.
 
 ## Stage H — Successful-run checks
+
+Before a full GPU run, append `--check-inputs` to the Stage F command to validate
+its inputs before model construction. Passing this check does not establish
+structural accuracy or guarantee sufficient GPU memory. Use a new output prefix
+for a new run; existing training outputs are protected against overwrite.
+
+Inspect the structured records and numbered CIF/checkpoint outputs described in
+[outputs and restart](outputs_and_restart.md), in addition to terminal messages.
 
 A successful run should print messages similar to:
 
