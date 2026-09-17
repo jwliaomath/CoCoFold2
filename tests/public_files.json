@@ -1,4 +1,9 @@
 [
+  ".gitbook.yaml",
+  "gitbook-docs.yaml",
+  "SUMMARY.md",
+  "docs/user_guide.md",
+  "docs/parameter_guide.md",
   ".github/workflows/public-tests.yml",
   ".github/workflows/website.yml",
   ".gitignore",
