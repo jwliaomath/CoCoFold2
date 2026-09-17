@@ -4,7 +4,7 @@ The static homepage and documentation are hosted at
 https://jwliaomath.github.io/CoCoFold2/.
 
 The homepage presents the preprint, method figures and citation. The primary
-user guide is https://jwliao.gitbook.io/cocofold2/; existing HTML tutorial URLs
+user guide is https://jwliaomath.gitbook.io/cocofold2/; existing HTML tutorial URLs
 remain available and are still generated from the same repository Markdown.
 The academic homepage layout is inspired by Academic Project Page Template
 (https://github.com/eliahuhorwitz/Academic-project-page-template), implemented
