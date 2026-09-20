@@ -85,11 +85,14 @@ def test_parallel_by_chain_transform_and_gradient(tmp_path):
 
 
 @pytest.mark.parametrize('learn',[False,True])
-def test_parallel_training_resume_and_frozen_gmm(tmp_path,monkeypatch,sampler,fake_protenix,learn):
+@pytest.mark.parametrize('width_mode',['legacy','molmap'])
+def test_parallel_training_resume_and_frozen_gmm(tmp_path,monkeypatch,sampler,fake_protenix,learn,width_mode):
     install_sampler(monkeypatch,sampler)
     args,initial=setup_case(tmp_path)
     args.by_chain=True
     args.learn_gmm=learn
+    args.gmm_sdev_init_mode=width_mode
+    args.gmm_molmap_resolution_A=2.0 if width_mode=='molmap' else None
     args.epochs=1
     trainer.train(args)
     prefix=tmp_path/'out/model_'

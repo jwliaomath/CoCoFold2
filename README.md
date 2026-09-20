@@ -18,6 +18,11 @@ initial prior, informative observations, upstream particle poses/CTF estimates
 and a compatible initial structure placed in the experimental coordinate frame.
 CoCoFold2 does not estimate particle poses or CTF parameters.
 
+GMM width initialization defaults to the historical `legacy` behavior. An
+optional [molmap-width initialization](docs/gaussian_kernels.md#optional-physical-width-initialization)
+matches a requested physical Gaussian width while retaining legacy coordinate
+scaling. It does not reproduce the complete ChimeraX renderer or change defaults.
+
 ## Start with the CPU checks
 
 Follow [installation](docs/installation.md) to create a separate CPU environment:

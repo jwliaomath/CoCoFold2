@@ -72,7 +72,7 @@ def validate_train_inputs(args, cache=None):
         read_alignment_manifest(args.block_alignment, args.cif_path)
     from gmm import gmm_from_arguments
     # CPU construction uses no random sampling; validate kernel combinations early.
-    gmm_from_arguments(weights, args, shape_device='cpu')
+    gmm_from_arguments(weights, args, shape_device='cpu', record_initialization=False)
     if args.halfmap1:
         import mrcfile
         headers = []

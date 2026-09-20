@@ -1,5 +1,21 @@
 # Public CLI reference
 
+## Fresh GMM width options
+
+Both `src/train.py` and `src/chain_parallel/train_chain_parallel_2d.py` additionally
+accept the following options (the help snapshots below predate this extension):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--gmm-sdev-init-mode {legacy,molmap}` | `legacy` | Choose fresh width initialization; saved GMM tensors take precedence |
+| `--gmm-molmap-resolution-A FLOAT` | None | Finite positive molmap width resolution in Angstrom, required only for `molmap` |
+
+`--resolution` remains a legacy coordinate/grid scale parameter, not generally
+a molmap resolution in Angstrom. See [Gaussian kernels](gaussian_kernels.md#optional-physical-width-initialization)
+for the mapping and the distinction from amplitude normalization.
+
+## Existing CLI help snapshots
+
 Generated from the public entrypoints with `--help`; no model or weights were loaded.
 Run from the repository root. Required input paths have no usable default.
 Protenix configuration flags forwarded by inference use the installed upstream configuration;

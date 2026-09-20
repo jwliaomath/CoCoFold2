@@ -234,11 +234,12 @@ class LocalComponent:
             )
         self.reference_coordinates = reference_coordinates.to(device)
         initial_weights = initial_atom_weights.detach().to(device=device, dtype=torch.float32)
-        self.gmm = (GaussianProjector(initial_weights) if gmm_options is None
-                    else gmm_from_arguments(initial_weights, gmm_options))
-        if gmm_options.resume or gmm_options.warm_start:
+        if gmm_options is not None and (gmm_options.resume or gmm_options.warm_start):
             self.gmm, source = restart_gmm(raw, gmm_options, initial_weights, device)
             current_record().event('gmm_restart', source=source)
+        else:
+            self.gmm = (GaussianProjector(initial_weights) if gmm_options is None
+                        else gmm_from_arguments(initial_weights, gmm_options))
         self.gmm.requires_grad_(gmm_options.learn_gmm)
         self.atom_weights = self.gmm.atom_weights
         with torch.no_grad():
@@ -727,7 +728,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--boxsize", default=256, type=int, help='Square particle image width/height in pixels; must match STAR/MRCS inputs. Default: %(default)s.')
     parser.add_argument("--apix", default=1.0, type=float, help='Experimental pixel size in Angstrom per pixel; must be positive. Default: %(default)s.')
     parser.add_argument("--norm", action="store_true", default=False, help='Min-max normalize each observed particle to [0,1]; constant images are rejected. Default: %(default)s.')
-    parser.add_argument("--resolution", default=3.0, type=float, help='GMM rendering resolution parameter in Angstrom; distinct from the FRC cutoff. Default: %(default)s.')
+    parser.add_argument("--resolution", default=3.0, type=float, help='Legacy GMM coordinate/grid scale parameter; not generally a molmap resolution in Angstrom. Default: %(default)s.')
     parser.add_argument("--density_center", default=None, type=float, nargs=2, help='Two image-center coordinates in pixels; omitted uses the box center. Default: %(default)s.')
     parser.add_argument(
         "--train_deterministic",

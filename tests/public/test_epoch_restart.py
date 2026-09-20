@@ -59,13 +59,15 @@ def fixture(tmp_path, target='pair_z', geometry='global'):
 @pytest.mark.parametrize('target', ['pair_z', 'z_trunk'])
 @pytest.mark.parametrize('mode', ['legacy', 'isolated'])
 @pytest.mark.parametrize('case', ['global_fixed', 'global_resampled', 'chain', 'block'])
-def test_completed_epoch_resume_matches_continuous(tmp_path, monkeypatch, sampler, target, mode, case, device='cpu', gmm_kernel='legacy', boundary_step_limit=False):
+def test_completed_epoch_resume_matches_continuous(tmp_path, monkeypatch, sampler, target, mode, case, device='cpu', gmm_kernel='legacy', boundary_step_limit=False, width_mode='legacy'):
     import train
     install(monkeypatch, sampler)
     geometry = case if case in ('chain', 'block') else 'global'
     args, _ = fixture(tmp_path, target, geometry)
     args.device = device
     args.gmm_kernel = gmm_kernel
+    args.gmm_sdev_init_mode = width_mode
+    args.gmm_molmap_resolution_A = 2.0 if width_mode == 'molmap' else None
     orders = []
     class ObservedLoader(train.DataLoader):
         def __iter__(self):
@@ -120,6 +122,33 @@ def test_completed_epoch_resume_matches_continuous(tmp_path, monkeypatch, sample
     events = [json.loads(line) for line in (record / 'metrics.jsonl').read_text(encoding='utf-8').splitlines()]
     assert [row['global_step'] for row in events if row['event'] == 'train_step'] == [3, 4]
     assert any(row['event'] == 'resume' and row['parent_run_id'] for row in events)
+
+
+def test_molmap_completed_epoch_resume(tmp_path, monkeypatch, sampler):
+    test_completed_epoch_resume_matches_continuous(
+        tmp_path, monkeypatch, sampler, 'pair_z', 'isolated', 'global_fixed', width_mode='molmap')
+
+
+def test_pre_width_extension_checkpoint_resumes(tmp_path, monkeypatch, sampler):
+    import train
+    install(monkeypatch, sampler)
+    args, _ = fixture(tmp_path)
+    args.epochs = 1
+    train.main(args)
+    path = tmp_path / 'run_1.pth'
+    saved = torch.load(path, weights_only=False)
+    saved['gmm']['config'].pop('width_initialization', None)
+    for key in ('gmm_sdev_init_mode', 'gmm_molmap_resolution_A'):
+        saved['training_resume']['science_args'].pop(key, None)
+    torch.save(saved, path)
+    args.resume, args.epochs = True, 2
+    args.diffusion_data_dir = str(path)
+    args.output_trained_model_dir = str(tmp_path / 'old_resumed_')
+    train.main(args)
+    actual = torch.load(tmp_path / 'old_resumed_2.pth', weights_only=False)
+    assert actual['training_resume']['epoch_complete']
+    assert actual['training_resume']['next_epoch'] == 2
+    assert 'width_initialization' not in actual['gmm']['config']
 
 
 @pytest.mark.parametrize('problem', ['old', 'partial', 'config', 'data', 'target', 'environment'])

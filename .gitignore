@@ -180,3 +180,5 @@
 !/website/static/icon.svg
 !/website/static/paper-figure1.webp
 !/website/static/paper-figure3.webp
+!/tests/reference/gmm_before_width_init.py
+!/tests/test_gmm_width_init.py

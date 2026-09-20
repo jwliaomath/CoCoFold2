@@ -135,5 +135,7 @@
   "website/static/paper-figure3.webp",
   "website/static/site.js",
   "website/static/styles.css",
-  "website/templates/document.html"
+  "website/templates/document.html",
+  "tests/reference/gmm_before_width_init.py",
+  "tests/test_gmm_width_init.py"
 ]
