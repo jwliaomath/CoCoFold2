@@ -15,7 +15,7 @@ SCIENCE_ARGS = (
     'lr_sdevs', 'gmm_kernel', 'gmm_amplitude', 'gmm_sigma_floor',
     'gmm_atom_chunk_size', 'gmm_checkpoint_chunks', 'gmm_checkpoint_peak2d',
     'coordinate_mode', 'alignment_sampler', 'coordinate_handoff_tolerance',
-    'block_update_trace_threshold',
+    'block_update_trace_threshold', 'gmm_sdev_init_mode', 'gmm_molmap_resolution_A',
 )
 
 
@@ -101,7 +101,10 @@ def prepare_restart(args):
         missing += [key for key in ('opt_state', 'gmm', 'z_bias', 'refinement_seed_settings') if cache.get(key) is None]
         if missing:
             raise ValueError('Incomplete resume state: ' + ', '.join(missing))
-        missing_science = [key for key in SCIENCE_ARGS if hasattr(args, key) and key not in state['science_args']]
+        # Pre-extension checkpoints do not have fresh-width provenance. Their
+        # saved GMM state is authoritative; do not require newly added fields.
+        missing_science = [key for key in SCIENCE_ARGS if hasattr(args, key) and key not in state['science_args']
+                           and key not in ('gmm_sdev_init_mode', 'gmm_molmap_resolution_A')]
         if missing_science:
             raise ValueError('Incomplete saved training configuration: ' + ', '.join(missing_science))
         if cache.get('coordinate_transform') is None and (cache.get('rotation') is None or cache.get('translation') is None):
@@ -191,7 +194,13 @@ def restart_gmm(cache, args, weights, device):
             if saved_weights.shape != weights.shape or not torch.isfinite(saved_weights).all():
                 raise ValueError('Invalid saved atom_weights')
             weights = saved_weights.to(device)
-        model = gmm_from_arguments(weights, args, shape_device=device)
+        widths = cache.get('sdevs')
+        # Saved legacy widths bypass fresh-mode validation and initialization.
+        options = copy.copy(args)
+        if widths is not None:
+            options.gmm_sdev_init_mode = 'legacy'
+        model = gmm_from_arguments(weights, options, shape_device=device,
+                                   record_initialization=widths is None)
         source = 'saved_amplitudes_new_widths' if saved_weights is not None else 'initialized_from_cli_and_cif'
         widths = cache.get('sdevs')
         if widths is not None:
@@ -199,6 +208,7 @@ def restart_gmm(cache, args, weights, device):
                 raise ValueError('Saved legacy widths are incompatible with requested GMM')
             with torch.no_grad():
                 model.sdevs.copy_(widths.to(device))
+            model.width_initialization = None  # Historical initialization is unknown.
             source = 'legacy_gmm_fields' if saved_weights is not None else 'saved_widths_cif_amplitudes'
     model.atom_chunk_size = args.gmm_atom_chunk_size
     model.checkpoint_chunks = args.gmm_checkpoint_chunks

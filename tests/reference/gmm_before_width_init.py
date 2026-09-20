@@ -24,44 +24,6 @@ from pts2img import (
 )
 
 
-GAUSSIAN_SIGMA_FACTOR = 1.0 / (math.pi * math.sqrt(2.0))
-
-
-def initial_internal_sdev(*, mode="legacy", apix=1.0, legacy_resolution=3.0,
-                          molmap_resolution_A=None):
-    """Fresh width only; preserve legacy coordinate scaling and amplitude units."""
-    if mode == "legacy":
-        # Preserve historical floating-point evaluation order exactly.
-        return 3 / (math.pi * math.sqrt(2))
-    if mode != "molmap":
-        raise ValueError("fresh GMM width initialization: unknown mode " + str(mode))
-    for name, value in (("apix", apix), ("legacy resolution", legacy_resolution),
-                        ("molmap_resolution_A", molmap_resolution_A)):
-        if value is None or not math.isfinite(float(value)) or float(value) <= 0:
-            raise ValueError(f"fresh GMM width initialization: {name} must be finite and > 0")
-    scale = float(apix) * float(legacy_resolution)
-    if not math.isfinite(scale) or scale <= 0:
-        raise ValueError("fresh GMM width initialization: coordinate scale must be finite and > 0")
-    value = (3 / (math.pi * math.sqrt(2))) * (float(molmap_resolution_A) / scale)
-    if not math.isfinite(value) or value <= 0:
-        raise ValueError("fresh GMM width initialization: mapped width must be finite and > 0")
-    return value
-
-
-def describe_gmm_width(*, mode="legacy", apix=1.0, legacy_resolution=3.0,
-                       molmap_resolution_A=None):
-    sdev = initial_internal_sdev(mode=mode, apix=apix, legacy_resolution=legacy_resolution,
-                                 molmap_resolution_A=molmap_resolution_A)
-    spacing = float(apix) * (float(legacy_resolution) / 3)
-    sigma = sdev * spacing
-    return dict(gmm_sdev_init_mode=mode, legacy_resolution=float(legacy_resolution),
-                apix_A=float(apix), internal_grid_spacing_A=spacing,
-                gmm_molmap_resolution_A=molmap_resolution_A if mode == "molmap" else None,
-                gmm_physical_sigma_A=None, gmm_internal_sdev_initial=sdev,
-                gmm_physical_sigma_initial_A=sigma,
-                gmm_molmap_equivalent_resolution_initial_A=sigma / GAUSSIAN_SIGMA_FACTOR)
-
-
 class GaussianProjector(nn.Module):
     MODES = ("legacy", "isotropic", "anisotropic")
     VERSION = 1
@@ -69,7 +31,7 @@ class GaussianProjector(nn.Module):
     def __init__(self, initial_weights, kernel="legacy", sigma_init=None,
                  sigma_floor=1e-4, amplitude_convention="auto",
                  atom_chunk_size=64, checkpoint_chunks=True, shape_device=None,
-                 checkpoint_peak2d=False, width_initialization=None):
+                 checkpoint_peak2d=False):
         super().__init__()
         if kernel not in self.MODES:
             raise ValueError(f"unknown Gaussian kernel: {kernel}")
@@ -89,13 +51,6 @@ class GaussianProjector(nn.Module):
                    ("peak_2d", "reference_mass", "peak_3d"))
         if amplitude_convention not in allowed:
             raise ValueError(f"{kernel} supports amplitude conventions {allowed}")
-        # sigma_init remains the historical reference_mass amplitude baseline.
-        # The opt-in width controls shape initialization only.
-        width = sigma_init if width_initialization is None else float(
-            width_initialization["gmm_internal_sdev_initial"])
-        if not math.isfinite(width) or not sigma_floor < width:
-            raise ValueError("fresh GMM width initialization: internal width must exceed sigma_floor")
-        self.width_initialization = None if width_initialization is None else dict(width_initialization)
         self.kernel = kernel
         self.sigma_init = sigma_init
         self.sigma_floor = float(sigma_floor)
@@ -110,14 +65,14 @@ class GaussianProjector(nn.Module):
         dtype = initial_weights.dtype
         count = initial_weights.numel()
         if kernel == "legacy":
-            self.sdevs = nn.Parameter(torch.full((count, 2), width,
+            self.sdevs = nn.Parameter(torch.full((count, 2), sigma_init,
                                                 device=shape_device, dtype=dtype))
         elif kernel == "isotropic":
-            raw = math.log(math.expm1(width - self.sigma_floor))
+            raw = math.log(math.expm1(sigma_init - self.sigma_floor))
             self.raw_sigma = nn.Parameter(torch.full((count, 1), raw,
                                                     device=shape_device, dtype=dtype))
         else:
-            diagonal = math.sqrt(width**2 - self.sigma_floor**2)
+            diagonal = math.sqrt(sigma_init**2 - self.sigma_floor**2)
             raw = torch.zeros(count, 6, device=shape_device, dtype=dtype)
             raw[:, :3] = math.log(math.expm1(diagonal))
             self.raw_cholesky = nn.Parameter(raw)
@@ -281,8 +236,6 @@ class GaussianProjector(nn.Module):
 
     def config(self):
         return {
-            **({"width_initialization": self.width_initialization}
-               if self.width_initialization is not None else {}),
             "kernel": self.kernel, "sigma_init": self.sigma_init,
             "sigma_floor": self.sigma_floor,
             "amplitude_convention": self.amplitude_convention,
@@ -336,10 +289,6 @@ class GaussianProjector(nn.Module):
 
 
 def add_gmm_arguments(parser):
-    parser.add_argument("--gmm-sdev-init-mode", choices=("legacy", "molmap"), default="legacy",
-                        help="Fresh GMM width initialization only; saved GMM state takes precedence. Default: %(default)s.")
-    parser.add_argument("--gmm-molmap-resolution-A", type=float, default=None,
-                        help="Target molmap Gaussian width resolution in Angstrom; required in molmap mode.")
     parser.add_argument("--gmm-kernel", choices=GaussianProjector.MODES, default="legacy", help='Gaussian kernel parameterization; legacy preserves the original width convention. Default: %(default)s.')
     parser.add_argument("--gmm-amplitude", choices=("auto", "peak_2d", "reference_mass", "peak_3d"), default="auto", help='Amplitude convention; auto uses the selected kernel convention. See docs/gaussian_kernels.md. Default: %(default)s.')
     parser.add_argument("--gmm-sigma-floor", type=float, default=1e-4, help='Positive covariance width floor in renderer units, used by the covariance kernels. Default: %(default)s.')
@@ -351,22 +300,11 @@ def add_gmm_arguments(parser):
                         default=False, help="Opt-in recomputation for legacy/isotropic peak_2d; preserves original 1000-atom chunks")
 
 
-def gmm_from_arguments(weights, args, shape_device=None, *, record_initialization=True):
-    metadata = describe_gmm_width(
-        mode=getattr(args, "gmm_sdev_init_mode", "legacy"),
-        apix=getattr(args, "apix", 1.0), legacy_resolution=getattr(args, "resolution", 3.0),
-        molmap_resolution_A=getattr(args, "gmm_molmap_resolution_A", None))
-    model = GaussianProjector(
+def gmm_from_arguments(weights, args, shape_device=None):
+    return GaussianProjector(
         weights, kernel=args.gmm_kernel, sigma_floor=args.gmm_sigma_floor,
         amplitude_convention=args.gmm_amplitude,
         atom_chunk_size=args.gmm_atom_chunk_size,
         checkpoint_chunks=args.gmm_checkpoint_chunks, shape_device=shape_device,
         checkpoint_peak2d=getattr(args, "gmm_checkpoint_peak2d", False),
-        width_initialization=metadata,
     )
-    if record_initialization:
-        print("Fresh GMM width initialization:", metadata)
-        from run_recording import current_record
-        current_record().resolved("gmm_width_initialization", metadata,
-                                  "Fresh initialization only; not the current learned or restored width")
-    return model

@@ -252,13 +252,14 @@ def main(args):
     if restart_payload is not None:
         gmm, gmm_source = restart_gmm(restart_payload, args, atom_weights, device)
     else:
-        gmm = gmm_from_arguments(atom_weights, args, shape_device=device)
         if (use_block_decoder and block_metadata.get('gmm') is not None) or (block_mode and not use_block_decoder and saved_gmm is not None):
             from gmm import GaussianProjector
             gmm=GaussianProjector.from_checkpoint(block_metadata['gmm'] if use_block_decoder else saved_gmm,device)
             gmm.atom_chunk_size=args.gmm_atom_chunk_size
             gmm.checkpoint_chunks=args.gmm_checkpoint_chunks
             gmm.checkpoint_peak2d=args.gmm_checkpoint_peak2d
+        else:
+            gmm = gmm_from_arguments(atom_weights, args, shape_device=device)
         gmm_source = 'existing_initialization'
     learn_gmm = getattr(args, "learn_gmm", True)
     output_format = getattr(args, "output_format", "cif")
@@ -695,7 +696,7 @@ def build_parser():
     parser.add_argument("--boxsize", default=256, type=positive_int, help='Square particle image width/height in pixels; must match STAR/MRCS inputs. Default: %(default)s.')
     parser.add_argument("--apix", default=1., type=positive_float, help='Experimental pixel size in Angstrom per pixel; must be positive. Default: %(default)s.')
     parser.add_argument("--norm", action="store_true", default=False, help='Min-max normalize each observed particle to [0,1]; constant images are rejected. Default: %(default)s.')
-    parser.add_argument("--resolution", default=3., type=positive_float, help='GMM rendering resolution parameter in Angstrom; distinct from the FRC cutoff. Default: %(default)s.')
+    parser.add_argument("--resolution", default=3., type=positive_float, help='Legacy GMM coordinate/grid scale parameter; not generally a molmap resolution in Angstrom. Default: %(default)s.')
     parser.add_argument("--density_center", default=None, type=finite_float, nargs=2, help='Two image-center coordinates in pixels; omitted uses the box center. Default: %(default)s.')
     parser.add_argument("--train_deterministic", "--train-deterministic",
                         dest="train_deterministic", action=argparse.BooleanOptionalAction, default=True, help='Reuse fixed diffusion stochasticity; disabling resamples noise. Per-chain placement requires fixed stochasticity. Default: %(default)s.')

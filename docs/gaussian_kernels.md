@@ -40,6 +40,54 @@ fail. Covariance chunk options apply to both mass and 3D-peak paths. The separat
 peak-2D switch defaults to off; both old-kernel paths retain 1000-atom chunks and
 the original rectangular crop policy.
 
+### Optional physical-width initialization
+
+Width initialization is independent of `--gmm-kernel`. Existing commands default
+to `--gmm-sdev-init-mode legacy`, retaining the original floating-point expression
+`3 / (pi * sqrt(2))` for the initial internal width. Historical experiments retain
+this initialization. To change only the fresh width, append:
+
+```text
+--gmm-sdev-init-mode molmap --gmm-molmap-resolution-A 3.0
+```
+
+With pixel size `a = apix` and legacy scale `R_C = resolution`, one internal-grid
+unit corresponds to `h = a * R_C / 3` Angstrom. The new mode initializes
+`s = 3 * R_M / (pi * sqrt(2) * a * R_C)`, giving physical standard deviation
+`sigma = R_M / (pi * sqrt(2))` Angstrom. Here `R_M` is the requested molmap
+resolution. All three inputs must be finite and positive, and the internal width
+must exceed the existing `--gmm-sigma-floor` constructor bound.
+
+`resolution` is a legacy CoCoFold renderer parameter that participates in
+coordinate/grid scaling and the historical fresh-GMM parameterization. It is
+not generally a ChimeraX molmap resolution in Angstrom. Fresh legacy widths
+correspond to `R_M = apix * resolution`; for example, `apix=3, resolution=3`
+gives a molmap-equivalent width resolution of 9 Angstrom. With the new mode and
+`R_M=3`, the internal width is approximately 0.225079 rather than 0.675237.
+Neither the coordinate transform nor `resolution` is changed automatically.
+
+This matches **Gaussian physical width only**, not the complete ChimeraX
+renderer. Atom-weight initialization, normalization conventions, cutoff,
+regularization, and subsequent width learning remain unchanged. In particular,
+`reference_mass` retains its historical amplitude baseline `sigma_init`, separate
+from the new initial shape width. Under `peak_3d`, integrated mass still depends
+on covariance through the existing formula. Narrower widths can interact with
+the unchanged width penalty; no penalty thresholds are adjusted automatically.
+Use `--no-learn-gmm` to freeze both widths and amplitudes, as before.
+
+Fresh-width provenance is recorded in the resolved run configuration and the
+GMM config's `width_initialization` metadata (mode, pixel size, legacy scale,
+internal spacing, initial width, physical sigma and equivalent resolution).
+These are initialization values, not current learned widths. The unused
+`gmm_physical_sigma_A` field is null; a direct-sigma mode is not implemented.
+Legacy mode ignores the optional molmap target.
+
+Existing checkpoint tensors take precedence on resume/warm-start. Historical
+GMM payloads without width metadata remain loadable; their original physical
+initialization is not inferred. Tensor keys, shapes and format version are
+unchanged. New metadata requires this version of the loader: loading new
+checkpoints in older software is not guaranteed.
+
 ## 2. Learned quantities and regularization
 
 | Kernel | Learned quantities per atom | Regularized quantities | Projection |

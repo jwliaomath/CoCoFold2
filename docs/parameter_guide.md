@@ -28,6 +28,13 @@ atom amplitudes and widths. Kernel and amplitude choices are described in
 [Gaussian rendering kernels](gaussian_kernels.md); they are not interchangeable
 performance switches.
 
+Fresh width initialization defaults to `--gmm-sdev-init-mode legacy`. To match
+a molmap Gaussian width, explicitly add `--gmm-sdev-init-mode molmap
+--gmm-molmap-resolution-A 3.0`. The existing `--resolution` controls legacy
+coordinate/grid scaling and is not generally a molmap resolution in Angstrom.
+Saved GMM widths take precedence when loading a checkpoint. See the
+[width mapping](gaussian_kernels.md#optional-physical-width-initialization).
+
 ## Randomness and alignment
 
 The CLI reference documents `--seed`, diffusion/data seed overrides and RNG modes.
