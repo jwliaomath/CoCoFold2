@@ -23,6 +23,11 @@ optional [molmap-width initialization](docs/gaussian_kernels.md#optional-physica
 matches a requested physical Gaussian width while retaining legacy coordinate
 scaling. It does not reproduce the complete ChimeraX renderer or change defaults.
 
+Single-GPU refinement also offers an opt-in fixed projection frame. The
+[projection-frame guide](docs/parameter_guide.md#projection-frame-single-gpu-refinement)
+explains how it differs from the historical `legacy` image placement and
+normalization; `legacy` remains the default.
+
 ## Start with the CPU checks
 
 Follow [installation](docs/installation.md) to create a separate CPU environment:

@@ -47,6 +47,14 @@ def validate_train_inputs(args, cache=None):
     if args.density_center is not None and (
             len(args.density_center) != 2 or not np.isfinite(args.density_center).all()):
         raise ValueError('--density_center requires two finite numbers')
+    projection_frame = getattr(args, 'projection_frame', 'legacy')
+    if projection_frame not in ('legacy', 'fixed'):
+        raise ValueError('--projection-frame must be legacy or fixed')
+    origin = getattr(args, 'projection_origin', (0., 0., 0.))
+    if len(origin) != 3 or not np.isfinite(origin).all():
+        raise ValueError('--projection-origin requires three finite Angstrom coordinates')
+    if projection_frame == 'legacy' and tuple(origin) != (0., 0., 0.):
+        raise ValueError('--projection-origin requires --projection-frame fixed')
     if bool(args.halfmap1) != bool(args.halfmap2):
         raise ValueError('--halfmap1 and --halfmap2 must be provided together')
     for name in ('star_data_dir', 'diffusion_data_dir', 'cif_path'):

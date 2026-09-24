@@ -182,7 +182,9 @@ class RunRecord:
         self.write('environment.json', environment())
         root = Path(__file__).resolve().parent
         sources = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
-                   for p in sorted(root.rglob('*.py')) if 'hetero' not in p.parts and p.name not in ('train_hetero.py', 'predict_hetero.py')}
+                   for p in sorted(root.rglob('*.py'))
+                   if 'hetero' not in p.relative_to(root).parts
+                   and p.name not in ('train_hetero.py', 'predict_hetero.py')}
         inputs = {}
         for name in ('diffusion_data_dir', 'star_data_dir', 'cif_path', 'input_json_path', 'block_alignment', 'halfmap1', 'halfmap2'):
             if getattr(args, name, None):

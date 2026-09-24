@@ -102,8 +102,9 @@ add directional broadening.
 ### Preserved legacy behavior
 
 The original renderer's executable expressions remain unchanged by comment and
-docstring cleanup. Legacy calls the original `pdb2img`, bypassing covariance
-rasterization. Initialization, both GMM optimizer groups and learning rates,
+docstring cleanup. With the default projection frame, the legacy kernel calls
+the original `pdb2img`, bypassing covariance rasterization. Initialization,
+both GMM optimizer groups and learning rates,
 AdamW defaults and ReLU expressions are retained, including the single-GPU
 placement of CPU amplitude parameters and GPU widths. The interval penalty is:
 
@@ -112,9 +113,12 @@ mean(relu(sdevs.float() - 0.8) + relu(0.1 - sdevs.float())) \
   + mean(relu(atom_weights.float() - 20) + relu(1 - atom_weights.float()))
 ```
 
-Legacy does not gain softplus, determinant factors or new normalization. The
-original `translation_2d` normalization, centroid shift and interpolation remain,
-including existing coordinate conventions, cropped tails and numerical behavior.
+Legacy does not gain softplus, determinant factors or new normalization. With
+the default `--projection-frame legacy`, the original `translation_2d`
+normalization, centroid shift and interpolation remain, including existing
+coordinate conventions, cropped tails and numerical behavior. The separate
+`--projection-frame fixed` option changes image placement and postprocessing;
+see [projection-frame behavior](parameter_guide.md#projection-frame-single-gpu-refinement).
 
 ### Positive parameterization
 
@@ -181,11 +185,13 @@ q = 2*pi*sigma_init**2 * w
 
 sigma_init is fixed, not the current sigma. Thus changing width at fixed w
 preserves the continuous integral; the projected peak depends on det(C).
-At spherical initialization, peaks match legacy up to floating-point and crop
-differences. q is the integral **before** shared renderer scaling and image
-normalization. Finite support, pixel sampling and cutoff approximate it.
-Subsequent `translation_2d` normalization means the final image sum is not an
-absolute scattering mass.
+At spherical initialization under the same legacy projection frame, peaks match
+up to floating-point and crop differences. q is the integral **before** shared
+renderer scaling and image normalization. Finite support, pixel sampling and
+cutoff approximate it.
+Under the default legacy projection frame, subsequent `translation_2d`
+normalization means the final image sum is not an absolute scattering mass.
+The fixed projection frame omits that per-image normalization.
 
 ### Three-dimensional peak amplitudes
 

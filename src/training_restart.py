@@ -16,6 +16,7 @@ SCIENCE_ARGS = (
     'gmm_atom_chunk_size', 'gmm_checkpoint_chunks', 'gmm_checkpoint_peak2d',
     'coordinate_mode', 'alignment_sampler', 'coordinate_handoff_tolerance',
     'block_update_trace_threshold', 'gmm_sdev_init_mode', 'gmm_molmap_resolution_A',
+    'projection_frame', 'projection_origin',
 )
 
 
@@ -104,14 +105,21 @@ def prepare_restart(args):
         # Pre-extension checkpoints do not have fresh-width provenance. Their
         # saved GMM state is authoritative; do not require newly added fields.
         missing_science = [key for key in SCIENCE_ARGS if hasattr(args, key) and key not in state['science_args']
-                           and key not in ('gmm_sdev_init_mode', 'gmm_molmap_resolution_A')]
+                           and key not in ('gmm_sdev_init_mode', 'gmm_molmap_resolution_A',
+                                           'projection_frame', 'projection_origin')]
         if missing_science:
             raise ValueError('Incomplete saved training configuration: ' + ', '.join(missing_science))
         if cache.get('coordinate_transform') is None and (cache.get('rotation') is None or cache.get('translation') is None):
             raise ValueError('Resume requires saved rotation/translation')
         explicit = set(getattr(args, '_explicit_options', ()))
-        conflicts = [key for key, value in state['science_args'].items()
-                     if key in explicit and getattr(args, key, None) != value]
+        for key, default in (('projection_frame', 'legacy'), ('projection_origin', (0., 0., 0.))):
+            requested = (tuple(getattr(args, key, default)) if key == 'projection_origin'
+                         else getattr(args, key, default))
+            if key not in state['science_args'] and key in explicit and requested != default:
+                raise ValueError('Old checkpoint has legacy projection; use --warm-start to change ' + key)
+        conflicts = [key for key, value in state['science_args'].items() if key in explicit
+                     and (tuple(getattr(args, key, ())) != tuple(value) if key == 'projection_origin'
+                          else getattr(args, key, None) != value)]
         if conflicts:
             raise ValueError('Resume cannot change scientific settings; use --warm-start: ' + ', '.join(conflicts))
         for key, value in state['science_args'].items():

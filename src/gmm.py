@@ -21,6 +21,7 @@ from pts2img import (
     centers_rotation, pdb2img, project_gaussian_covariances,
     sum_of_gaussians_2d_covariance, sum_of_gaussians_2d_torch, translation_2d,
     sum_of_gaussians_2d_torch_checkpointed, pdb2img_peak2d_checkpointed,
+    translation_2d_fixed_frame,
 )
 
 
@@ -260,9 +261,32 @@ class GaussianProjector(nn.Module):
 
     def forward(self, atoms_coord, rotation, trans, resolution, density_center,
                 box_size=256, apix=1, cutoff_range=5,
-                sigma_factor=1 / (math.pi * math.sqrt(2))):
+                sigma_factor=1 / (math.pi * math.sqrt(2)),
+                projection_frame="legacy", projection_origin=(0., 0., 0.)):
         if atoms_coord.ndim == 2:
             atoms_coord = atoms_coord[None]
+        if projection_frame not in ("legacy", "fixed"):
+            raise ValueError('projection_frame must be legacy or fixed')
+        if projection_frame == "fixed":
+            # A single 3-D origin is held constant as coordinates, GMM weights,
+            # conformations and viewing directions change.  render_raw's old
+            # +3*resolution padding is canceled algebraically by global_origin.
+            projected = self.project_coordinates(atoms_coord, rotation, apix)
+            batch = projected.shape[0]
+            center = torch.as_tensor(density_center, device=projected.device,
+                                     dtype=projected.dtype).reshape(-1, 2)
+            if center.shape[0] not in (1, batch) or not torch.isfinite(center).all():
+                raise ValueError('density_center must be finite [2] or [B,2]')
+            origin = torch.as_tensor(projection_origin, device=projected.device,
+                                     dtype=projected.dtype)
+            if origin.shape != (3,) or not torch.isfinite(origin).all():
+                raise ValueError('projection_origin must be three finite Angstrom coordinates')
+            pivot = centers_rotation((origin / apix).reshape(1, 1, 3), rotation)
+            step = float(resolution) / 3.0
+            raw_origin = pivot - (center[:, None, :] - 3.0 * float(resolution)) * step
+            raw = self.render_raw(projected, rotation, raw_origin, resolution, box_size,
+                                  cutoff_range, sigma_factor)
+            return translation_2d_fixed_frame(raw, trans.to(raw.device).clone() / step)
         if self.amplitude_convention == "peak_2d":
             widths = self.widths()
             if self.kernel == "isotropic":

@@ -222,6 +222,23 @@ def translation_2d(proj, trans, box_size, apix,density_center):
     return proj_trans
 
 
+def translation_2d_fixed_frame(proj, trans):
+    """Apply only the recorded particle shift; never infer a shift from density.
+
+    ``trans`` has the same pixel/sign convention as the legacy translation_2d
+    caller.  Explicit align_corners=False matches PyTorch's historical default.
+    The input is not normalized or modified in place.
+    """
+    if proj.ndim != 4 or proj.shape[1] != 1 or proj.shape[-1] != proj.shape[-2]:
+        raise ValueError('fixed-frame projection expects [B,1,D,D] images')
+    if trans.shape != (len(proj), 2) or not torch.isfinite(trans).all():
+        raise ValueError('fixed-frame shifts must be finite [B,2] pixel offsets')
+    eye = torch.eye(2, device=proj.device, dtype=proj.dtype).expand(len(proj), -1, -1)
+    theta = torch.cat((eye, (trans.to(proj) * (2.0 / proj.shape[-1]))[..., None]), dim=-1)
+    grid = F.affine_grid(theta, proj.shape, align_corners=False)
+    return F.grid_sample(proj, grid, mode='bicubic', align_corners=False)
+
+
 def translation_2d_robust(proj, trans, box_size, apix, density_center):
     """
     Robust 2D translation for cryo-EM density projections with negative backgrounds.
