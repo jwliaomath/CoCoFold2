@@ -100,6 +100,12 @@ def _sample_diffusion(configs, training=False, **kwargs: Any) -> torch.Tensor:
 
 @recorded("train")
 def main(args):
+    # Programmatic callers may supply a Namespace created before these CLI
+    # options existed. Keep their historical renderer semantics.
+    if not hasattr(args, 'projection_frame'):
+        args.projection_frame = 'legacy'
+    if not hasattr(args, 'projection_origin'):
+        args.projection_origin = (0., 0., 0.)
     from randomness import resolve_seeds, apply_seed_settings, seed_legacy, data_loader_options
     from training_restart import prepare_restart, input_identity, restart_gmm, capture_epoch_state, restore_epoch_rng
     restart_cache = prepare_restart(args)
@@ -541,6 +547,8 @@ def main(args):
                         cutoff_range=5,  # in standard deviations
                         sigma_factor=1 / (np.pi * np.sqrt(2)),  # standard deviation / resolution
                         apix = float(args.apix),
+                        projection_frame=args.projection_frame,
+                        projection_origin=args.projection_origin,
                     )
                     proj *= particle_sign
 
@@ -627,6 +635,8 @@ def main(args):
                     'sdevs':gmm.sdevs if gmm.kernel == 'legacy' else None,
                     'gmm':gmm.export_checkpoint(),
                     'gmm_kernel':gmm.kernel,
+                    'projection_frame':args.projection_frame,
+                    'projection_origin':tuple(args.projection_origin),
                     'rotation':rotation,
                     'translation':translation,
                     'enable_efficient_fusion':enable_efficient_fusion,
@@ -698,6 +708,11 @@ def build_parser():
     parser.add_argument("--norm", action="store_true", default=False, help='Min-max normalize each observed particle to [0,1]; constant images are rejected. Default: %(default)s.')
     parser.add_argument("--resolution", default=3., type=positive_float, help='Legacy GMM coordinate/grid scale parameter; not generally a molmap resolution in Angstrom. Default: %(default)s.')
     parser.add_argument("--density_center", default=None, type=finite_float, nargs=2, help='Two image-center coordinates in pixels; omitted uses the box center. Default: %(default)s.')
+    parser.add_argument('--projection-frame', choices=('legacy', 'fixed'), default='legacy',
+                        help='legacy dynamically recenters each GMM projection (historical default); fixed projects in one 3-D map frame.')
+    parser.add_argument('--projection-origin', type=finite_float, nargs=3, default=(0., 0., 0.),
+                        metavar=('X_A', 'Y_A', 'Z_A'),
+                        help='Fixed 3-D map-frame pivot in Angstrom. Used only with --projection-frame fixed; default 0 0 0.')
     parser.add_argument("--train_deterministic", "--train-deterministic",
                         dest="train_deterministic", action=argparse.BooleanOptionalAction, default=True, help='Reuse fixed diffusion stochasticity; disabling resamples noise. Per-chain placement requires fixed stochasticity. Default: %(default)s.')
     parser.add_argument("--device", default="cuda:0", help='PyTorch device for this operation; distributed CUDA ranks use LOCAL_RANK. Default: %(default)s.')

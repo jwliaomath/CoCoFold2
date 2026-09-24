@@ -14,9 +14,23 @@ accept the following options (the help snapshots below predate this extension):
 a molmap resolution in Angstrom. See [Gaussian kernels](gaussian_kernels.md#optional-physical-width-initialization)
 for the mapping and the distinction from amplitude normalization.
 
+## Projection frame options (single-GPU `src/train.py`)
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--projection-frame {legacy,fixed}` | `legacy` | Historical per-image recentering and normalization, or a fixed 3D reference frame |
+| `--projection-origin X_A Y_A Z_A` | `0 0 0` | Fixed-frame 3D origin in Angstrom; a nonzero value requires `--projection-frame fixed` |
+
+These options are distinct from `--gmm-kernel legacy` and
+`--gmm-sdev-init-mode legacy`. See [projection-frame behavior](parameter_guide.md#projection-frame-single-gpu-refinement)
+for the placement and normalization differences. The component-parallel trainer
+does not expose these options.
+
 ## Existing CLI help snapshots
 
 Generated from the public entrypoints with `--help`; no model or weights were loaded.
+The help snapshots below predate the additional GMM width and projection-frame
+options described above.
 Run from the repository root. Required input paths have no usable default.
 Protenix configuration flags forwarded by inference use the installed upstream configuration;
 the list below covers the CoCoFold2 parser. For resolved settings consult run records.

@@ -123,6 +123,7 @@
 !/tests/check_gmm_distributed.py
 !/tests/public/conftest.py
 !/tests/public/cpu_guard.py
+!/tests/public/fixed_frame_probe.py
 !/tests/public/parallel_worker.py
 !/tests/public/restart_worker.py
 !/tests/public/test_alignment_sampler.py
@@ -143,6 +144,7 @@
 !/tests/public/test_b9_release.py
 !/tests/public/test_checkpoint_io.py
 !/tests/public/test_epoch_restart.py
+!/tests/public/test_fixed_frame_semantics.py
 !/tests/public/test_foundations.py
 !/tests/public/test_public_gate.py
 !/tests/public/test_record_names.py

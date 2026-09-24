@@ -16,6 +16,39 @@ Options such as `--transR` and `--particle_sign` describe conventions of the inp
 data. Use the settings appropriate to your processing pipeline; do not assume
 that the values in one example apply to every dataset.
 
+## Projection frame (single-GPU refinement)
+
+`src/train.py` offers two ways to place a rendered structure in each particle
+image. This choice is separate from `--gmm-kernel`, `--gmm-sdev-init-mode`,
+particle pose conventions and the experimental pixel size.
+
+| `--projection-frame` | Image placement |
+|---|---|
+| `legacy` (default) | Recompute the projected atom minimum for each view, normalize the rendered image by its total intensity, then shift its image centroid to `--density_center` while applying the recorded particle translation. This preserves the historical projection behavior. |
+| `fixed` | Keep one 3D reference origin in the experimental coordinate frame. Project that origin through each particle pose so it lands at `--density_center`, then apply only the recorded particle translation. Do not recenter by the current image centroid or normalize each rendered image by its total intensity. |
+
+For `fixed`, `--projection-origin X_A Y_A Z_A` specifies that 3D reference
+point in Angstrom; its default is `0 0 0`. The reference CIF and origin must be
+in the same 3D experimental frame, with particle poses and `--density_center`
+consistent with that geometry. A nonzero origin requires
+`--projection-frame fixed`. For example, append
+`--projection-frame fixed --projection-origin 0 0 0` to a single-GPU training
+command to select the fixed frame with the default origin.
+
+The distinction matters when coordinates change: a global translation can be
+absorbed by `legacy` recentering, whereas `fixed` retains its projected in-plane
+displacement. A local change can move the legacy image centroid and thereby
+shift an otherwise unchanged part; the fixed reference point does not follow
+that centroid. The two modes also differ in image-intensity normalization, so
+their raw projections and training trajectories need not match. These
+implementation differences alone do not establish which mode performs better
+on experimental data. The public two-GPU
+component-parallel trainer has not adopted the fixed-frame option.
+
+Projection settings are saved with new checkpoints and used by the case audit.
+An exact `--resume` keeps the saved scientific settings; use a new run with
+`--warm-start` if changing the projection frame from a checkpoint.
+
 ## Memory and optimization
 
 Distinguish `--batch_size` from `--mini_batch_size` when adapting a tutorial to

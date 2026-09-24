@@ -75,7 +75,8 @@ def select_particles(directory, output, count):
     write_star(frame, output)
 
 
-def fixed_particle_frc(initial, final, gmm, star, box, apix, device, count=8):
+def fixed_particle_frc(initial, final, gmm, star, box, apix, device, count=8,
+                       projection_frame='legacy', projection_origin=(0., 0., 0.)):
     """Mean unscaled FRC on the same first views; no decoder or backpropagation."""
     from particledataset import ParticleDataset
     from ctf import compute_ctf
@@ -94,7 +95,8 @@ def fixed_particle_frc(initial, final, gmm, star, box, apix, device, count=8):
                     rotation=torch.tensor(rotation, dtype=torch.float32, device=device)[None],
                     trans=torch.tensor(shift, dtype=torch.float32, device=device)[None],
                     density_center=torch.tensor([box/2,box/2], dtype=torch.float32, device=device),
-                    box_size=box, cutoff_range=5, sigma_factor=1/(np.pi*np.sqrt(2)), apix=apix)
+                    box_size=box, cutoff_range=5, sigma_factor=1/(np.pi*np.sqrt(2)), apix=apix,
+                    projection_frame=projection_frame, projection_origin=projection_origin)
                 score = float(compute_frc(projection.float(), torch.tensor(image,device=device)[None,None].float(),
                     ctf.float(), box_size=box, max_freq=2*apix/3.))
                 if not np.isfinite(score):
@@ -103,6 +105,7 @@ def fixed_particle_frc(initial, final, gmm, star, box, apix, device, count=8):
     return dict(indices=list(range(len(scores[0]))), initial_mean=float(np.mean(scores[0])),
         final_mean=float(np.mean(scores[1])), delta=float(np.mean(scores[1])-np.mean(scores[0])),
         initial_per_particle=scores[0], final_per_particle=scores[1],
+        projection_frame=projection_frame, projection_origin=list(projection_origin),
         definition='Unscaled FRC averaged over the same first particles, 3 Å cutoff; report only, not a new training loss or pass threshold')
 
 
@@ -150,7 +153,10 @@ def validate_run(directory, epochs, expected_steps, reference, star, device='cpu
         initial_gmm = GaussianProjector.from_checkpoint(cache['gmm'], device)
         initial_gmm.atom_chunk_size = 1000
         science = cache['training_resume']['science_args']
-        result['fixed_particle_frc'] = fixed_particle_frc(initial, final, initial_gmm, star, science['boxsize'], science['apix'], device)
+        result['fixed_particle_frc'] = fixed_particle_frc(
+            initial, final, initial_gmm, star, science['boxsize'], science['apix'], device,
+            projection_frame=science.get('projection_frame', 'legacy'),
+            projection_origin=science.get('projection_origin', (0., 0., 0.)))
         result['passed'] = all(row['passed'] for row in result['checks'])
     except Exception as error:
         result['error'] = type(error).__name__+': '+str(error)

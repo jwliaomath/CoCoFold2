@@ -1,7 +1,9 @@
 """Structured experiment records and entry integration without model weights."""
 import json
+import importlib.util
 import os
 from pathlib import Path
+import shutil
 import sys
 from types import SimpleNamespace
 
@@ -42,6 +44,27 @@ def test_record_files_argv_script_and_rng_unchanged(tmp_path):
     assert [e['event'] for e in events] == ['start', 'train_step', 'success']
     assert all(e['schema_version'] == 1 and e['run_id'] for e in events)
     assert read(root / 'provenance.json')['source_sha256']['run_recording.py']
+
+
+def test_provenance_ignores_parent_directory_named_hetero(tmp_path):
+    """A parent directory name must not hide public source from provenance."""
+    source = Path(__file__).resolve().parents[2] / 'src' / 'run_recording.py'
+    nested = tmp_path / 'hetero' / 'code' / 'src'
+    nested.mkdir(parents=True)
+    copy = nested / 'run_recording.py'
+    shutil.copy2(source, copy)
+    spec = importlib.util.spec_from_file_location('recording_nested_fixture', copy)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    @module.recorded('train')
+    def run(args):
+        return 7
+
+    records = tmp_path / 'records'
+    assert run(SimpleNamespace(record_dir=str(records))) == 7
+    hashes = read(records / 'provenance.json')['source_sha256']
+    assert 'run_recording.py' in hashes
 
 
 @pytest.mark.parametrize('exception,status', [(ValueError('bad inputs'), 'failed'), (KeyboardInterrupt(), 'interrupted'), (SystemExit(143), 'interrupted')])
