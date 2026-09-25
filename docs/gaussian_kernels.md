@@ -92,7 +92,7 @@ checkpoints in older software is not guaranteed.
 
 | Kernel | Learned quantities per atom | Regularized quantities | Projection |
 |---|---|---|---|
-| legacy | One amplitude and two directly optimized 2D widths | Original widths and amplitude | Original `pdb2img`; widths remain on image axes |
+| legacy | One amplitude and two directly optimized 2D widths | Original widths and amplitude | Original `pdb2img` in legacy projection mode; the fixed-frame path renders the same Gaussian kernel in the shared map frame. Widths remain on image axes |
 | isotropic | One amplitude and one raw width | Actual `softplus(raw)+floor` width and amplitude | Spherical 3D kernel or optional old 2D peak path |
 | anisotropic | One amplitude and six raw Cholesky parameters | Three principal-axis standard deviations and amplitude | Rotate 3D covariance, then project the full 2D ellipse |
 
@@ -102,8 +102,8 @@ add directional broadening.
 ### Preserved legacy behavior
 
 The original renderer's executable expressions remain unchanged by comment and
-docstring cleanup. With the default projection frame, the legacy kernel calls
-the original `pdb2img`, bypassing covariance rasterization. Initialization,
+docstring cleanup. With the historical `--projection-frame legacy`, the legacy
+kernel calls the original `pdb2img`, bypassing covariance rasterization. Initialization,
 both GMM optimizer groups and learning rates,
 AdamW defaults and ReLU expressions are retained, including the single-GPU
 placement of CPU amplitude parameters and GPU widths. The interval penalty is:
@@ -113,12 +113,12 @@ mean(relu(sdevs.float() - 0.8) + relu(0.1 - sdevs.float())) \
   + mean(relu(atom_weights.float() - 20) + relu(1 - atom_weights.float()))
 ```
 
-Legacy does not gain softplus, determinant factors or new normalization. With
-the default `--projection-frame legacy`, the original `translation_2d`
+Legacy does not gain softplus, determinant factors or new normalization. When
+`--projection-frame legacy` is selected explicitly, the original `translation_2d`
 normalization, centroid shift and interpolation remain, including existing
-coordinate conventions, cropped tails and numerical behavior. The separate
-`--projection-frame fixed` option changes image placement and postprocessing;
-see [projection-frame behavior](parameter_guide.md#projection-frame-single-gpu-refinement).
+coordinate conventions, cropped tails and numerical behavior. The new-run
+default `--projection-frame fixed` changes image placement and postprocessing;
+see [projection-frame behavior](parameter_guide.md#projection-frame-single-gpu-and-component-parallel-refinement).
 
 ### Positive parameterization
 
@@ -189,7 +189,7 @@ At spherical initialization under the same legacy projection frame, peaks match
 up to floating-point and crop differences. q is the integral **before** shared
 renderer scaling and image normalization. Finite support, pixel sampling and
 cutoff approximate it.
-Under the default legacy projection frame, subsequent `translation_2d`
+Under the legacy projection frame, subsequent `translation_2d`
 normalization means the final image sum is not an absolute scattering mass.
 The fixed projection frame omits that per-image normalization.
 

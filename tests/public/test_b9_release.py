@@ -23,7 +23,9 @@ def test_t0_release_archive_roundtrip_and_private_exclusion(tmp_path):
     result=builder(ROOT,tmp_path/'delivery')
     expected=set(inventory())
     assert set(result['files'])==expected
-    assert not any('hetero' in Path(p).parts or Path(p).name in ('train_random.py','train_finetune.py','train_hetero.py') for p in expected)
+    assert not any('hetero' in Path(p).parts or 'ablation' in Path(p).parts
+                   or p in ('src/train_random.py', 'src/train_finetune.py')
+                   or Path(p).name == 'train_hetero.py' for p in expected)
     with zipfile.ZipFile(tmp_path/'delivery/CoCoFold2-public.zip') as archive:
         assert set(archive.namelist())=={'CoCoFold2/'+p for p in expected}
         for rel in expected:

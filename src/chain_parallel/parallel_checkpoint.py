@@ -52,6 +52,13 @@ def resume_index(args, entries):
             raise ValueError(f'Incomplete/corrupt epoch component: {path}')
         updated.append(replace(entry,diffusion_data_dir=path))
     explicit=set(getattr(args,'_explicit_options',[]))
+    for key, default in (('projection_frame', 'legacy'), ('projection_origin', (0., 0., 0.))):
+        if key not in data['science_args']:
+            value = getattr(args, key, default)
+            requested = tuple(value) if key == 'projection_origin' and value is not None else value
+            if key in explicit and requested != default:
+                raise ValueError('Old parallel checkpoint has legacy projection; use --warm-start to change ' + key)
+            setattr(args, key, default)
     for key,value in data['science_args'].items():
         if key in explicit and json_value(getattr(args,key)) != value:
             raise ValueError(f'Resume cannot change --{key}; use --warm-start for a new experiment')
@@ -131,6 +138,7 @@ def save_epoch(args, component, optimizer, loader, reports, epoch, step, complet
             N_sample=component.n_sample, z_bias=component.z_bias,z_mul=None,s_inputs_bias=None,s_bias=None,
             atom_weights=component.atom_weights,sdevs=component.gmm.sdevs if component.gmm.kernel=='legacy' else None,
             gmm=component.gmm.export_checkpoint(),gmm_kernel=component.gmm.kernel,gmm_learning_enabled=args.learn_gmm,
+            projection_frame=args.projection_frame,projection_origin=tuple(args.projection_origin),
             rotation=component.rotation,translation=component.translation,
             component_id=component.entry.component_id,contextual_split_metadata=component.contextual_split_metadata,
             refinement_sampler='global',refinement_seed_settings=component.seed_settings,export_sampling=snapshot,

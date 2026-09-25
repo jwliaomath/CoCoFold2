@@ -100,7 +100,7 @@ def test_t2_train_preflight_subprocess(tmp_path, broken):
     star = str(tmp_path / 'missing.star') if broken else args.star_data_dir
     result = cli('train.py', ['--star_data_dir', star, '--cif_path', args.cif_path,
         '--diffusion_data_dir', args.diffusion_data_dir, '--output_trained_model_dir', args.output_trained_model_dir,
-        '--boxsize', '24', '--device', 'cpu', '--check-inputs'])
+        '--boxsize', '24', '--device', 'cpu', '--projection-origin', '0', '0', '0', '--check-inputs'])
     if broken:
         assert result.returncode != 0
         assert 'missing.star' in result.stderr

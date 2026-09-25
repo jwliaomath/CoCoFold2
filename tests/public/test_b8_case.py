@@ -136,6 +136,8 @@ def test_b8_launcher_uses_full_star_and_validated_science(tmp_path):
     assert parsed.star_data_dir==str(args.star.resolve()) and parsed.max_steps is None
     assert (parsed.epochs,parsed.batch_size,parsed.mini_batch_size)==(10,32,16)
     assert parsed.learn_gmm and parsed.transR and parsed.train_deterministic
+    assert parsed.projection_frame=='fixed'
+    assert tuple(parsed.projection_origin)==(154.512,154.512,154.512)
     assert not parsed.gmm_checkpoint_peak2d and not parsed.by_chain and not parsed.update_affine_mat
     assert (parsed.lr_bias,parsed.lr_atom_weights,parsed.lr_sdevs)==(.01,.01,.005)
 

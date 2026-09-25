@@ -1,5 +1,14 @@
 # Outputs, records and restart
 
+The three similarly named output arguments have different meanings:
+`src/inference.py --output_model_dir` names a **directory** for diffusion
+caches, `src/get_pdb.py --out_dir` names a **directory** for exported structures,
+and the trainers' `--output_trained_model_dir` names a **filename prefix**.
+Inference also writes Protenix predictions and `inference_summary.json` under
+its separate `--dump_dir`. None of these paths requires resources in the
+source checkout; `--resource-root` points inference to the compatible
+`checkpoint/` and `common/` directories.
+
 ## Structure files and checkpoints
 
 Single-GPU `--output_trained_model_dir` remains a **filename prefix**. For

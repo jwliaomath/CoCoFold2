@@ -13,6 +13,9 @@ installation, input preparation, refinement and inspection of saved results.
 1. Follow [Installation](installation.md) and validate your environment.
 2. Read [Input data requirements](data_requirements.md), including the coordinate
    frame and particle-path conventions.
+   For fixed-frame refinement, choose the required 3D
+   [projection origin](parameter_guide.md#choosing-the-projection-origin) before
+   starting a new run.
 3. Run the [7ZDT/7ZD5 minimal example](../examples/7zdt_7zd5/README.md) before
    adapting the workflow to your own data.
 4. Inspect the exported structure and [structured run records](outputs_and_restart.md).

@@ -101,7 +101,7 @@ def main():
     stage = out / 'public_source'
     summary = dict(batch='B6' if args.groups and set(args.groups) <= {'b6','b6_cli'} else 'public_cpu', passed=False, real_weights=False, real_protenix=False,
                    decoder='analytic test substitute', cuda=False, excluded_gpu_tests=EXCLUDED,
-                   deferred=['Random/fine-tuning outside current public release scope', 'Multi-process and real-weight validation are separate from this CPU gate'], tests=[])
+                   deferred=['Real-weight GPU validation', 'Multi-process validation is separate from this CPU gate'], tests=[])
     summary.update(scope='selected_groups' if args.groups else 'complete_public_gate', selected_groups=args.groups)
     if args.groups and set(args.groups) <= {'b7b','b7b_cli'}:
         summary['batch']='B7b'

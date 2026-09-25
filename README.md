@@ -23,10 +23,14 @@ optional [molmap-width initialization](docs/gaussian_kernels.md#optional-physica
 matches a requested physical Gaussian width while retaining legacy coordinate
 scaling. It does not reproduce the complete ChimeraX renderer or change defaults.
 
-Single-GPU refinement also offers an opt-in fixed projection frame. The
-[projection-frame guide](docs/parameter_guide.md#projection-frame-single-gpu-refinement)
+New single-GPU and component-parallel runs default to fixed-frame projection. The
+[projection-frame guide](docs/parameter_guide.md#projection-frame-single-gpu-and-component-parallel-refinement)
 explains how it differs from the historical `legacy` image placement and
-normalization; `legacy` remains the default.
+normalization and how to choose the required `--projection-origin` in the placed
+CIF/map coordinate frame. The initial manuscript results used `legacy`;
+`--projection-frame legacy` remains available for reproduction. Subsequent
+author-reported tests found comparable or better backbone and Cα RMSD for most
+targets, with substantial improvements in several cases.
 
 ## Start with the CPU checks
 
@@ -92,9 +96,8 @@ Changing microbatch size can change loss scaling, so keep it consistent
 across comparisons. Half-map weighting options currently do not affect
 the particle FRC objective.
 
-The resampled-stochasticity and diffusion fine-tuning ablation code is
-not included in this release. Model weights, MSA resources and experimental
-particle stacks must be obtained separately.
+Model weights, MSA resources and experimental particle stacks must be obtained
+separately.
 
 Installation and real-weight smoke testing were completed in a fresh
 Linux environment using GNU 12.2.0 for extension compilation.

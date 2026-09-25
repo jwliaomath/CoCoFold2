@@ -113,10 +113,12 @@ def prepare_restart(args):
             raise ValueError('Resume requires saved rotation/translation')
         explicit = set(getattr(args, '_explicit_options', ()))
         for key, default in (('projection_frame', 'legacy'), ('projection_origin', (0., 0., 0.))):
-            requested = (tuple(getattr(args, key, default)) if key == 'projection_origin'
-                         else getattr(args, key, default))
-            if key not in state['science_args'] and key in explicit and requested != default:
-                raise ValueError('Old checkpoint has legacy projection; use --warm-start to change ' + key)
+            value = getattr(args, key, default)
+            requested = tuple(value) if key == 'projection_origin' and value is not None else value
+            if key not in state['science_args']:
+                if key in explicit and requested != default:
+                    raise ValueError('Old checkpoint has legacy projection; use --warm-start to change ' + key)
+                setattr(args, key, default)
         conflicts = [key for key, value in state['science_args'].items() if key in explicit
                      and (tuple(getattr(args, key, ())) != tuple(value) if key == 'projection_origin'
                           else getattr(args, key, None) != value)]

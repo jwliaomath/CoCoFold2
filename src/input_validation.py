@@ -47,14 +47,8 @@ def validate_train_inputs(args, cache=None):
     if args.density_center is not None and (
             len(args.density_center) != 2 or not np.isfinite(args.density_center).all()):
         raise ValueError('--density_center requires two finite numbers')
-    projection_frame = getattr(args, 'projection_frame', 'legacy')
-    if projection_frame not in ('legacy', 'fixed'):
-        raise ValueError('--projection-frame must be legacy or fixed')
-    origin = getattr(args, 'projection_origin', (0., 0., 0.))
-    if len(origin) != 3 or not np.isfinite(origin).all():
-        raise ValueError('--projection-origin requires three finite Angstrom coordinates')
-    if projection_frame == 'legacy' and tuple(origin) != (0., 0., 0.):
-        raise ValueError('--projection-origin requires --projection-frame fixed')
+    from projection_settings import resolve_projection_settings
+    resolve_projection_settings(args)
     if bool(args.halfmap1) != bool(args.halfmap2):
         raise ValueError('--halfmap1 and --halfmap2 must be provided together')
     for name in ('star_data_dir', 'diffusion_data_dir', 'cif_path'):
@@ -172,5 +166,8 @@ def validate_train_inputs(args, cache=None):
     check_output_directory(os.path.dirname(prefix) or '.')
     args.output_trained_model_dir = prefix
     report.update(refinement_sampler=sampler, output_format=getattr(args, 'output_format', 'cif'), gmm_learning=getattr(args, 'learn_gmm', True), seed_settings=seed_settings, n_atoms=len(coords), n_tokens=int(n_token), device=str(device), cache_schema='checked',
+                  projection_frame=args.projection_frame, projection_origin_A=list(args.projection_origin),
+                  density_center_px=(list(args.density_center) if args.density_center is not None
+                                     else [args.boxsize / 2, args.boxsize / 2]),
                   scope='metadata, stack headers, topology count and cache schema; no model execution')
     return cache, dataset, report

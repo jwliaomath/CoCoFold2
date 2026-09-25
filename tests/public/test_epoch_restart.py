@@ -253,7 +253,8 @@ def test_resume_in_fresh_process_inherits_defaults(tmp_path):
     public = Path(__file__).parent
     command = [sys.executable, str(public / 'restart_worker.py'),
                '--star_data_dir', args.star_data_dir, '--cif_path', args.cif_path,
-               '--device', 'cpu', '--boxsize', '24', '--batch_size', '2', '--mini_batch_size', '1']
+               '--device', 'cpu', '--boxsize', '24', '--batch_size', '2', '--mini_batch_size', '1',
+               '--projection-frame', 'legacy']
     env = dict(os.environ)
     for label, epochs, checkpoint, flags in (
         ('full', 2, args.diffusion_data_dir, ['--rng-mode', 'isolated', '--seed', '19', '--no-train-deterministic', '--no-learn-gmm', '--lr_bias', '.002']),

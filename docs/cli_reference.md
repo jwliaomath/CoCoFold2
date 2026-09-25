@@ -14,17 +14,20 @@ accept the following options (the help snapshots below predate this extension):
 a molmap resolution in Angstrom. See [Gaussian kernels](gaussian_kernels.md#optional-physical-width-initialization)
 for the mapping and the distinction from amplitude normalization.
 
-## Projection frame options (single-GPU `src/train.py`)
+## Projection frame options (`src/train.py` and component-parallel trainer)
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--projection-frame {legacy,fixed}` | `legacy` | Historical per-image recentering and normalization, or a fixed 3D reference frame |
-| `--projection-origin X_A Y_A Z_A` | `0 0 0` | Fixed-frame 3D origin in Angstrom; a nonzero value requires `--projection-frame fixed` |
+| `--projection-frame {legacy,fixed}` | `fixed` | Fixed 3D reference frame for new runs; choose `legacy` for historical per-image recentering and normalization |
+| `--projection-origin X_A Y_A Z_A` | Required for fixed; omitted for legacy | Fixed-frame 3D reference point in the placed CIF/map frame, in Angstrom; no universal numerical default |
 
 These options are distinct from `--gmm-kernel legacy` and
-`--gmm-sdev-init-mode legacy`. See [projection-frame behavior](parameter_guide.md#projection-frame-single-gpu-refinement)
-for the placement and normalization differences. The component-parallel trainer
-does not expose these options.
+`--gmm-sdev-init-mode legacy`. See [projection-frame behavior](parameter_guide.md#projection-frame-single-gpu-and-component-parallel-refinement)
+for the placement and normalization differences. Component-parallel ranks
+render into the same fixed frame before their images are summed. For the
+zero-origin 288-pixel/1.073 Å map in the 6ZBH examples, use
+`--projection-origin 154.512 154.512 154.512` after checking the map/CIF frame.
+The centered 7ZDT/7ZD5 molmap example uses `--projection-origin 0 0 0`.
 
 ## Existing CLI help snapshots
 

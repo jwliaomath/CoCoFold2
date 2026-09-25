@@ -127,8 +127,27 @@ def train_fixture(folder):
         '--star_data_dir', str(star), '--cif_path', str(template),
         '--diffusion_data_dir', str(path), '--output_trained_model_dir', str(folder / 'run_'),
         '--device', 'cpu', '--boxsize', '24', '--batch_size', '2', '--mini_batch_size', '1',
+        '--projection-frame', 'legacy',
     ])
     return args, cache
+
+
+def test_new_projection_default_requires_map_frame_origin(tmp_path):
+    defaults = build_parser().parse_args([
+        '--star_data_dir', 's', '--cif_path', 'c',
+        '--diffusion_data_dir', 'd', '--output_trained_model_dir', 'o'])
+    assert defaults.projection_frame == 'fixed' and defaults.projection_origin is None
+    args, _ = train_fixture(tmp_path)
+    args.projection_frame = 'fixed'
+    args.projection_origin = None
+    with pytest.raises(ValueError, match='--projection-origin'):
+        validate_train_inputs(args)
+    args.projection_origin = (0., 0., 0.)
+    _, _, report = validate_train_inputs(args)
+    assert args.projection_origin == (0., 0., 0.)
+    assert report['projection_frame'] == 'fixed'
+    assert report['projection_origin_A'] == [0., 0., 0.]
+    assert report['n_particles'] == 3
 
 
 def test_valid_preflight_without_protenix(tmp_path, monkeypatch):

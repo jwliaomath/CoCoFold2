@@ -708,11 +708,11 @@ def build_parser():
     parser.add_argument("--norm", action="store_true", default=False, help='Min-max normalize each observed particle to [0,1]; constant images are rejected. Default: %(default)s.')
     parser.add_argument("--resolution", default=3., type=positive_float, help='Legacy GMM coordinate/grid scale parameter; not generally a molmap resolution in Angstrom. Default: %(default)s.')
     parser.add_argument("--density_center", default=None, type=finite_float, nargs=2, help='Two image-center coordinates in pixels; omitted uses the box center. Default: %(default)s.')
-    parser.add_argument('--projection-frame', choices=('legacy', 'fixed'), default='legacy',
-                        help='legacy dynamically recenters each GMM projection (historical default); fixed projects in one 3-D map frame.')
-    parser.add_argument('--projection-origin', type=finite_float, nargs=3, default=(0., 0., 0.),
+    parser.add_argument('--projection-frame', choices=('legacy', 'fixed'), default='fixed',
+                        help='fixed projects in one 3-D map frame (default); legacy dynamically recenters each GMM projection.')
+    parser.add_argument('--projection-origin', type=finite_float, nargs=3, default=None,
                         metavar=('X_A', 'Y_A', 'Z_A'),
-                        help='Fixed 3-D map-frame pivot in Angstrom. Used only with --projection-frame fixed; default 0 0 0.')
+                        help='Required for fixed: 3-D reference point in the placed CIF/map frame, in Angstrom. No universal default.')
     parser.add_argument("--train_deterministic", "--train-deterministic",
                         dest="train_deterministic", action=argparse.BooleanOptionalAction, default=True, help='Reuse fixed diffusion stochasticity; disabling resamples noise. Per-chain placement requires fixed stochasticity. Default: %(default)s.')
     parser.add_argument("--device", default="cuda:0", help='PyTorch device for this operation; distributed CUDA ranks use LOCAL_RANK. Default: %(default)s.')

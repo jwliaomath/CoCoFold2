@@ -1,12 +1,12 @@
-"""Distributed factoring of CoCoFold2's existing 2-D ``pdb2img`` renderer.
+"""Distributed factoring of CoCoFold2's 2-D GMM renderer.
 
 This proposal intentionally reuses the renderer primitives in ``src/pts2img.py``.
 It does not construct a 3-D density.  The only distributed operations are:
 
-1. an autograd-aware all-gather of each component's projected XY minimum, so
-   all components use the same origin as one concatenated atom tensor;
+1. for legacy projection, an autograd-aware all-gather of each component's
+   projected XY minimum, matching one concatenated atom tensor;
 2. an autograd-aware SUM of the unshifted component GMM images;
-3. one call to the original ``translation_2d`` on the assembled image.
+3. one final translation of the assembled image, using the selected frame.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import torch
 import torch.distributed as dist
 from torch.distributed.nn import functional as dist_nn
 
-from pts2img import centers_rotation, sum_of_gaussians_2d_torch, translation_2d
+from pts2img import centers_rotation, sum_of_gaussians_2d_torch, translation_2d, translation_2d_fixed_frame
 
 
 def distributed_active() -> bool:
@@ -196,13 +196,38 @@ def distributed_project_gaussians(
     projector, atom_coordinates, rotations, translations, density_center,
     resolution, box_size, apix, cutoff_range=5.0,
     sigma_factor=1.0 / (math.pi * math.sqrt(2.0)),
+    projection_frame="legacy", projection_origin=(0., 0., 0.),
 ):
     """Unified kernel API with source-equivalent component aggregation.
 
-    Do not call projector.forward on each component: its per-image centering
-    and normalization must happen only AFTER summing the component densities.
+    Do not call projector.forward on each component: frame-dependent image
+    processing must happen only AFTER summing the component densities.
     """
+    if projection_frame not in ("legacy", "fixed"):
+        raise ValueError('projection_frame must be legacy or fixed')
     projected = projector.project_coordinates(atom_coordinates, rotations, apix)
+    if projection_frame == "fixed":
+        # Match GaussianProjector.forward exactly. Every rank uses the same
+        # map-frame pivot; no component-dependent minimum or recentering occurs.
+        batch = projected.shape[0]
+        center = torch.as_tensor(density_center, device=projected.device,
+                                 dtype=projected.dtype).reshape(-1, 2)
+        if center.shape[0] not in (1, batch) or not torch.isfinite(center).all():
+            raise ValueError('density_center must be finite [2] or [B,2]')
+        origin = torch.as_tensor(projection_origin, device=projected.device,
+                                 dtype=projected.dtype)
+        if origin.shape != (3,) or not torch.isfinite(origin).all():
+            raise ValueError('projection_origin must be three finite Angstrom coordinates')
+        pivot = centers_rotation((origin / apix).reshape(1, 1, 3), rotations)
+        step = float(resolution) / 3.0
+        raw_origin = pivot - (center[:, None, :] - 3.0 * float(resolution)) * step
+        local_image = projector.render_raw(
+            projected, rotations, raw_origin, resolution, box_size, cutoff_range, sigma_factor,
+        )
+        assembled = differentiable_sum(local_image)
+        return translation_2d_fixed_frame(
+            assembled, translations.to(assembled.device).clone() / step,
+        )
     origin = differentiable_global_min(projected.amin(dim=1, keepdim=True))
     local_image = projector.render_raw(
         projected, rotations, origin, resolution, box_size, cutoff_range, sigma_factor,
