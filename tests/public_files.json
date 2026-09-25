@@ -70,6 +70,7 @@
   "src/model/protenix.py",
   "src/particledataset.py",
   "src/prepare_block_alignment.py",
+  "src/projection_settings.py",
   "src/pts2img.py",
   "src/randomness.py",
   "src/refinement_runtime.py",

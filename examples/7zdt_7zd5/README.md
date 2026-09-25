@@ -91,7 +91,11 @@ Smoke uses the first 32 particles for two epochs/two optimizer steps. Refine
 uses all 1000 for ten epochs/320 steps. Both use batch=32, mini-batch=16, seed=42,
 fixed stochasticity and explicitly frozen GMM amplitudes/widths. Keep these
 settings and the inputs identical between smoke and refine. The generic trainer
-defaults are unchanged by this example. Slurm is optional; submit the same
+uses fixed-frame projection for new runs. This example passes
+`--projection-origin 0 0 0` explicitly because its map was centered at physical
+`(0,0,0)` Å; do not reuse that value for a different map without checking its
+frame. See [choosing the origin](../../docs/parameter_guide.md#choosing-the-projection-origin).
+Slurm is optional; submit the same
 commands on a suitable GPU compute node if required by your cluster.
 
 Inspect `validation.json`/`validation.txt` in each output directory. Checks cover

@@ -42,8 +42,7 @@ requirements or a performance guarantee.
 
 Independent and Contextual paths share public controls but use different
 conditioning. The validation recorded here does not include a long
-real-model Independent-component run. The resampled-stochasticity and
-diffusion fine-tuning ablation code is not included in this release.
+real-model Independent-component run.
 
 ## Continuous validation and release information
 

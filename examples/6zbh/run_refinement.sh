@@ -18,6 +18,9 @@ source "${ENV_FILE}"
 : "${DIFFUSION_DATA:?DIFFUSION_DATA is required}"
 : "${OUTPUT_ROOT:?OUTPUT_ROOT is required}"
 : "${LOG_ROOT:?LOG_ROOT is required}"
+: "${PROJECTION_ORIGIN_X:?PROJECTION_ORIGIN_X is required}"
+: "${PROJECTION_ORIGIN_Y:?PROJECTION_ORIGIN_Y is required}"
+: "${PROJECTION_ORIGIN_Z:?PROJECTION_ORIGIN_Z is required}"
 
 [[ -f "${STAR_FILE}" ]] || { echo "ERROR: missing STAR file: ${STAR_FILE}" >&2; exit 1; }
 [[ -d "${MRC_ROOT}" ]] || { echo "ERROR: missing particle root directory: ${MRC_ROOT}" >&2; exit 1; }
@@ -49,6 +52,8 @@ CMD=(
   --diffusion_data_dir "${DIFFUSION_DATA}"
   --boxsize 288
   --apix 1.073
+  --projection-frame fixed
+  --projection-origin "${PROJECTION_ORIGIN_X}" "${PROJECTION_ORIGIN_Y}" "${PROJECTION_ORIGIN_Z}"
   --batch_size 32
   --mini_batch_size 6
   --map_resolution 2.146

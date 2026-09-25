@@ -85,6 +85,11 @@ cluster partition and node exclusions belong in the local submission script.
 The example uses the **entire supplied STAR**, 10 epochs, batch=32,
 mini-batch=16, box=288, apix=1.073, GMM resolution=3, FRC cutoff=2.146,
 particle sign=-1, transR enabled, fixed stochasticity, seed=42 and legacy RNG.
+It explicitly uses fixed-frame projection with origin
+`154.512 154.512 154.512` Å, the box center only for a verified zero-origin,
+zero-start, standard-axis 288-pixel map at 1.073 Å/pixel. Check the map header
+and all placed component CIFs before using this command with another dataset;
+see [choosing the origin](../../docs/parameter_guide.md#choosing-the-projection-origin).
 GMM weight/width learning stays enabled, with the trainer's unchanged default
 learning rates (0.01/0.01/0.005). Component affine updates and per-chain fitting
 are off. The peak-2D memory-checkpoint switch remains at its original default.
@@ -96,8 +101,11 @@ all N particles in the same order; particles are not sharded between GPUs.
 
 ## Outputs and automatic checks
 
-Each epoch writes two component `.pth`/`.cif` pairs, `model_merged_EPOCH.cif`,
-and `model_epoch_EPOCH.json`. The merged CIF is in the experimental reference
+Each epoch writes two component `.pth`/`.cif` pairs named
+`model_COMPONENT_ID_rankRANK_EPOCH`, plus `model_merged_EPOCH.cif` and
+`model_epoch_EPOCH.json` in the new run directory. The wrapper's `--output`
+names that run **directory**; it supplies the `model_` filename prefix to the
+trainer. The merged CIF is in the experimental reference
 frame and has chains A/B/C/D. **No manual merging is needed.** The initially
 exported unrefined files have a different name and are raw decoder coordinates;
 use the numbered merged CIF for the refined assembly.

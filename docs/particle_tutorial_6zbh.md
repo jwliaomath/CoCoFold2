@@ -48,8 +48,6 @@ data/6zbh/
 ├── particles/
 │   ├── 366.star
 │   └── PARTICLE_STACK.mrcs
-├── protenix/
-│   └── 6zbh_sample_0.cif
 └── fitted/
     └── 6zbh_fitted.cif
 
@@ -101,7 +99,11 @@ params/6zbh_diffusion_data.pth
 
 The cache contains the frozen diffusion-module state and the cached conditional representations used by CoCoFold2, including `s_inputs`, `s_trunk`, cached `pair_z` or `z_trunk`, atom-level caches, the noise schedule and configuration.
 
-Protenix also writes its standard prediction outputs under `outputs/protenix_6zbh/`. Locate the generated sample CIF and set `PROTENIX_SAMPLE_CIF` in `examples/6zbh/env.sh`.
+Protenix also writes its standard prediction outputs under
+`outputs/protenix_6zbh/`. These are separate from the diffusion cache in
+`params/`. A Protenix sample CIF is optional for the direct `get_pdb.py` command
+below; the supplied `run_initial_prediction.sh` wrapper still uses one as a
+topology template.
 
 ## Stage D — Deterministic initial prediction
 
@@ -111,21 +113,25 @@ Generate the deterministic initial structure from the cache:
 python src/get_pdb.py \
   --pdbid 6ZBH \
   --diffusion_data_dir params/6zbh_diffusion_data.pth \
-  --cif_path outputs/protenix_6zbh/SAMPLE_CIF_PATH \
-  --out_dir outputs/6zbh_initial
+  --out_dir outputs/6zbh_initial \
+  --output-format cif
 ```
 
-`--cif_path` supplies atom topology and ordering from the Protenix output. It must not point to the deposited reference structure. The expected output is:
+For a compatible cache, `get_pdb.py` reconstructs atom topology and ordering
+from its saved features, so no reference CIF is needed at this stage. The
+expected output is:
 
 ```text
-outputs/6zbh_initial/6ZBH_initial_prediction.pdb
+outputs/6zbh_initial/6ZBH_initial_prediction.cif
+outputs/6zbh_initial/6ZBH_initial_prediction_topology.json
 ```
 
-This PDB filename is intentional: supplying a template without an explicit output
-format retains the historical export behavior. Add `--output-format cif` to export
-`6ZBH_initial_prediction.cif` instead. Template-free export is also supported by
-omitting `--cif_path` when the cache contains the required atom identities; it
-defaults to CIF. Training still needs the fitted reference CIF from Stage E.
+If an older cache lacks the atom identities needed for template-free export,
+provide `--cif_path` with the **matching Protenix sample CIF/PDB** as a topology
+template. Never use the deposited evaluation structure for this purpose. With
+a template and no explicit output format, the historical initial export is
+`6ZBH_initial_prediction.pdb`; add `--output-format cif` to request CIF.
+Training still requires the fitted initial CIF from Stage E.
 
 Open this file in a molecular viewer and verify that the topology is not scrambled before proceeding.
 
@@ -156,6 +162,8 @@ python -u src/train.py \
   --diffusion_data_dir params/6zbh_diffusion_data.pth \
   --boxsize 288 \
   --apix 1.073 \
+  --projection-frame fixed \
+  --projection-origin 154.512 154.512 154.512 \
   --batch_size 32 \
   --mini_batch_size 6 \
   --map_resolution 2.146 \
@@ -163,6 +171,13 @@ python -u src/train.py \
   --update_affine_mat \
   --train_deterministic
 ```
+
+The origin shown is the geometric center of a 288-pixel map at 1.073 Å/pixel
+whose MRC origin and starts are zero and whose axes have the standard order:
+`288 × 1.073 / 2 = 154.512 Å`. Use it **only** after checking that this is the
+frame of your reconstructed map and fitted CIF. A different map origin, crop,
+pixel size or coordinate convention requires a different `--projection-origin`.
+See [choosing the projection origin](parameter_guide.md#choosing-the-projection-origin).
 
 The retained defaults are:
 
@@ -192,6 +207,10 @@ outputs/6zbh/checkpoint_1.pth
 outputs/6zbh/checkpoint_10.cif
 outputs/6zbh/checkpoint_10.pth
 ```
+
+This prefix is different from the inference cache **directory** `params/`
+and the initial-export **directory** `outputs/6zbh_initial/`. Invocation
+records are written separately; see [outputs and restart](outputs_and_restart.md).
 
 Each epoch checkpoint contains:
 
@@ -240,10 +259,19 @@ Then run:
 
 ```bash
 bash examples/6zbh/run_inference.sh
-bash examples/6zbh/run_initial_prediction.sh
+source examples/6zbh/env.sh
+python src/get_pdb.py \
+  --pdbid 6ZBH \
+  --diffusion_data_dir "$DIFFUSION_DATA" \
+  --out_dir "$OUTPUT_ROOT/6zbh_initial" \
+  --output-format cif
 # Complete Stage E before the next command.
 bash examples/6zbh/run_refinement.sh
 ```
 
+`run_initial_prediction.sh` is an optional template-based wrapper. If using it,
+set `PROTENIX_SAMPLE_CIF` to the matching Protenix output in `env.sh`; that
+wrapper keeps the historical PDB export. The direct Stage D command does not
+need this variable.
 
 See [records, export and restart](outputs_and_restart.md) for JSONL, captured arguments, synchronized checkpoints and complete-epoch resume. Check inputs before model construction by appending `--check-inputs` to the training command. The active loss does not currently consume the optional half-map weights.

@@ -54,10 +54,25 @@ def worker(rank,folder):
         image=distributed_project_gaussians(gmm,placed,**params)
         expected=full(atoms_coord=fullcoords[None],rotation=rot,trans=trans,density_center=center,
             resolution=3.,box_size=24,apix=1.,cutoff_range=5,sigma_factor=1/(torch.pi*2**.5))
-        (image.square().mean()/2).backward()
+        (image.square().mean()/2).backward(retain_graph=True)
         expected.square().mean().backward()
         torch.testing.assert_close(image,expected,atol=2e-5,rtol=2e-5)
         # Known transforms are translations; local/raw and placed gradients agree.
+        torch.testing.assert_close(local.grad,fullcoords.grad[rank*6:(rank+1)*6],atol=2e-5,rtol=2e-5)
+        local.grad.zero_(); fullcoords.grad.zero_()
+        fixed_origin=(12., 12., 0.)
+        fixed_image=distributed_project_gaussians(
+            gmm, placed, **params, projection_frame='fixed', projection_origin=fixed_origin,
+        )
+        fixed_expected=full(
+            atoms_coord=fullcoords[None], rotation=rot, trans=trans, density_center=center,
+            resolution=3., box_size=24, apix=1., cutoff_range=5,
+            sigma_factor=1/(torch.pi*2**.5), projection_frame='fixed',
+            projection_origin=fixed_origin,
+        )
+        (fixed_image.square().mean()/2).backward()
+        fixed_expected.square().mean().backward()
+        torch.testing.assert_close(fixed_image,fixed_expected,atol=2e-5,rtol=2e-5)
         torch.testing.assert_close(local.grad,fullcoords.grad[rank*6:(rank+1)*6],atol=2e-5,rtol=2e-5)
         try:
             phase('injected rank fault',lambda: (_ for _ in ()).throw(ValueError('test fault')) if rank==1 else None)
@@ -69,14 +84,18 @@ def worker(rank,folder):
     base=trainer.build_parser().parse_args(['--component_manifest',str(folder/'input/components.yaml'),
         '--star_data_dir',str(folder/'input/particles.star'),'--output_trained_model_dir',str(folder/'first/model_'),
         '--device','cpu','--backend','gloo','--boxsize','24','--batch_size','2','--mini_batch_size','1',
+        '--projection-frame','legacy',
         '--epochs','1','--no-learn-gmm','--by-chain','--record-dir',str(folder/'first/records')])
-    for label in ('first','resumed','continuous','fault'):
+    for label in ('first','resumed','continuous','fixed','fault'):
         args=copy.deepcopy(base)
         args.output_trained_model_dir=str(folder/label/'model_')
         args.record_dir=str(folder/label/'records')
         if label=='resumed':
             args.resume=str(folder/'first/model_epoch_1.json'); args.epochs=2
         if label=='continuous': args.epochs=2
+        if label=='fixed':
+            args.projection_frame='fixed'
+            args.projection_origin=(12.,12.,0.)
         if label=='fault':
             original=trainer._sample_diffusion
             counter=[0]
@@ -98,8 +117,14 @@ def worker(rank,folder):
     assert mse<1e-8
     assert resumed['parallel_resume']['global_step']==4
     assert torch.equal(resumed['parallel_resume']['data_generator_state'],full['parallel_resume']['data_generator_state'])
+    fixed=torch.load(folder/f'fixed/model_part{rank}_rank{rank}_1.pth',weights_only=False)
+    assert fixed['projection_frame']=='fixed' and fixed['projection_origin']==(12.,12.,0.)
     assert not list((folder/'fault').glob('*epoch*.json'))
-    (folder/f'rank{rank}.json').write_text(json.dumps(dict(passed=True,resume_latent_mse=mse,projection_gradient=True,fault_propagation=True)),encoding='utf-8')
+    (folder/f'rank{rank}.json').write_text(json.dumps(dict(
+        passed=True, resume_latent_mse=mse, projection_gradient=True,
+        fixed_frame_projection_gradient=True, fixed_frame_training=True,
+        fault_propagation=True,
+    )),encoding='utf-8')
 
 
 def main():

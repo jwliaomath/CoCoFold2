@@ -26,10 +26,14 @@ def setup_case(folder, count=1):
                chain_id_map={'A':chr(65+i*2),'B':chr(66+i*2)}) for i in range(count)]
     manifest=folder/'components.yaml'
     manifest.write_text(yaml.safe_dump(dict(schema_version=1,components=rows)),encoding='utf-8')
-    return trainer.build_parser().parse_args(['--component_manifest',str(manifest),
+    args=trainer.build_parser().parse_args(['--component_manifest',str(manifest),
         '--star_data_dir',str(folder/'particles.star'),'--output_trained_model_dir',str(folder/'out/model_'),
         '--device','cpu','--backend','gloo','--boxsize','24','--batch_size','2','--mini_batch_size','1',
-        '--epochs','2','--no-learn-gmm']),cache
+        '--epochs','2','--no-learn-gmm'])
+    # Historical fixture exercises the saved legacy behavior without marking
+    # the projection mode as an explicit CLI override during resume tests.
+    args.projection_frame='legacy'
+    return args,cache
 
 
 def install_sampler(monkeypatch,sampler):
@@ -48,10 +52,56 @@ def test_parallel_defaults_and_data_seed(tmp_path):
     defaults=trainer.build_parser().parse_args(['--component_manifest','m','--star_data_dir','s','--output_trained_model_dir','p'])
     assert defaults.seed==42 and defaults.learn_gmm and defaults.epochs==10
     assert defaults.mini_batch_size==12 and defaults.train_deterministic
+    assert defaults.projection_frame=='fixed' and defaults.projection_origin is None
     assert (defaults.lr_bias,defaults.lr_atom_weights,defaults.lr_sdevs)==(.01,.01,.005)
     assert seeds(defaults)['data_seed']==42 and seeds(defaults)['rng_mode']=='legacy'
     defaults.data_seed=13
     assert seeds(defaults)['data_seed']==13
+
+
+def test_parallel_fixed_default_requires_origin(tmp_path,capsys):
+    args,_=setup_case(tmp_path)
+    args.projection_frame='fixed'
+    args.projection_origin=None
+    args.check_inputs=True
+    with pytest.raises(ValueError,match='--projection-origin'):
+        trainer.train(args)
+    args.projection_origin=(12.,12.,0.)
+    trainer.train(args)
+    preflight=json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert preflight['projection_frame']=='fixed'
+    assert preflight['projection_origin_A']==[12.,12.,0.]
+
+
+def test_fixed_frame_training_records_and_resume(tmp_path,monkeypatch,sampler,fake_protenix):
+    install_sampler(monkeypatch,sampler)
+    args,_=setup_case(tmp_path)
+    args.projection_frame='fixed'
+    args.projection_origin=(12.,12.,0.)
+    args.epochs=1
+    trainer.train(args)
+    prefix=tmp_path/'out/model_'
+    index=Path(str(prefix)+'epoch_1.json')
+    saved=torch.load(Path(str(prefix)+'part0_rank0_1.pth'),map_location='cpu',weights_only=False)
+    assert saved['projection_frame']=='fixed'
+    assert tuple(saved['projection_origin'])==args.projection_origin
+    science=json.loads(index.read_text())['science_args']
+    assert science['projection_frame']=='fixed'
+    assert science['projection_origin']==list(args.projection_origin)
+    metadata=json.loads((tmp_path/'out/chain_parallel_2d_run_metadata.json').read_text())
+    assert metadata['projection_frame']=='fixed'
+    assert metadata['projection_origin']==list(args.projection_origin)
+    resumed=copy.deepcopy(args)
+    resumed.resume=str(index); resumed.epochs=2
+    resumed.output_trained_model_dir=str(tmp_path/'resumed/model_')
+    resumed.projection_frame='legacy'; resumed.projection_origin=(0.,0.,0.)
+    resume_index(resumed,load_manifest(args.component_manifest))
+    assert resumed.projection_frame=='fixed'
+    assert resumed.projection_origin==list(args.projection_origin)
+    resumed._explicit_options=['projection_frame']
+    resumed.projection_frame='legacy'
+    with pytest.raises(ValueError,match='projection_frame'):
+        resume_index(resumed,load_manifest(args.component_manifest))
 
 
 @pytest.mark.parametrize('kind',['missing_cache','bad_rank','duplicate_chain','bad_core'])
@@ -178,6 +228,16 @@ def test_resume_rejects_missing_rank_and_science_change(tmp_path,monkeypatch,sam
     install_sampler(monkeypatch,sampler)
     args,_=setup_case(tmp_path); args.epochs=1
     trainer.train(args)
+    old_index=json.loads((tmp_path/'out/model_epoch_1.json').read_text())
+    old_index['science_args'].pop('projection_frame')
+    old_index['science_args'].pop('projection_origin')
+    old_path=tmp_path/'out/old_epoch_1.json'
+    old_path.write_text(json.dumps(old_index),encoding='utf-8')
+    resumed=copy.deepcopy(args)
+    resumed.resume=str(old_path); resumed.epochs=2
+    resumed.projection_frame='fixed'; resumed.projection_origin=None
+    resume_index(resumed,load_manifest(args.component_manifest))
+    assert resumed.projection_frame=='legacy' and resumed.projection_origin==(0.,0.,0.)
     args.resume=str(tmp_path/'out/model_epoch_1.json'); args.epochs=2
     args.lr_bias=.2; args._explicit_options=['lr_bias']
     with pytest.raises(ValueError,match='lr_bias'):

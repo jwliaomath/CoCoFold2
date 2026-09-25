@@ -116,6 +116,14 @@ Voltage, defocus values, defocus angle, spherical aberration, amplitude contrast
 
 Before refinement, the initial Protenix model must be rigidly placed once into the coordinate frame defined by the particle poses or reconstructed density. This fitted model is supplied to `train.py --cif_path` and is used as the optimization-frame topology and placement reference.
 
+New runs use fixed-frame projection. Record the 3D map/CIF reference point in
+Angstrom and pass it as `--projection-origin X_A Y_A Z_A`; the trainer cannot
+infer it safely from a STAR file alone. Confirm the reconstructed map's origin,
+starts, axis order, voxel size and box size before selecting the point. See
+[choosing the projection origin](parameter_guide.md#choosing-the-projection-origin)
+for the zero-origin-box-center and centered-molmap examples. Multi-GPU
+component references must all use this same physical frame.
+
 The deposited reference structure must not be used for this step in the reported experiment.
 
 ### 10. Cached diffusion tensor file

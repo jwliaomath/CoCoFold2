@@ -79,7 +79,7 @@ from randomness import add_seed_arguments, seed_legacy, apply_seed_settings
 from run_recording import recorded, current_record, add_record_arguments
 from training_restart import RestartArgumentParser, restart_gmm
 from training_output import export_training_structure
-from cli_utils import positive_int, positive_float
+from cli_utils import positive_int, positive_float, finite_float
 from coordinate_transform import CoordinateTransform
 from chain_parallel.parallel_runtime import phase, gather, seeds, preflight, validate_partition, fit_chains
 from chain_parallel.parallel_checkpoint import resume_index, validate_resume, restore_resume, save_epoch
@@ -431,11 +431,19 @@ def _validate_same_model(
 
 
 def train(args: argparse.Namespace) -> None:
+    # Preserve the historical renderer for programmatic callers built before
+    # these options were added to the CLI.
+    if not hasattr(args, 'projection_frame'):
+        args.projection_frame = 'legacy'
+    if not hasattr(args, 'projection_origin'):
+        args.projection_origin = (0., 0., 0.)
     prefix = os.path.expanduser(str(args.output_trained_model_dir))
     trailing = prefix.endswith(('/', '\\'))
     args.output_trained_model_dir = os.path.abspath(prefix) + (os.sep if trailing else '')
     if args.check_inputs:
         entries, index = resume_index(args, load_manifest(args.component_manifest))
+        from projection_settings import resolve_projection_settings
+        resolve_projection_settings(args)
         for rank in range(len(entries)):
             component_for_rank(entries, rank, len(entries))
         reports = []
@@ -444,11 +452,17 @@ def train(args: argparse.Namespace) -> None:
             reports.append(report)
             del raw, dataset
         validate_partition(reports)
-        print(json.dumps(dict(passed=True, components=len(reports), model_loaded=False)))
+        print(json.dumps(dict(passed=True, components=len(reports), model_loaded=False,
+                              projection_frame=args.projection_frame,
+                              projection_origin_A=list(args.projection_origin),
+                              density_center_px=(list(args.density_center) if args.density_center is not None
+                                                 else [args.boxsize / 2, args.boxsize / 2]))))
         return
     rank, world_size, device = _setup_distributed(args)
     try:
         entries, index = phase('manifest/resume', lambda: resume_index(args, load_manifest(args.component_manifest)))
+        from projection_settings import resolve_projection_settings
+        phase('projection settings', lambda: resolve_projection_settings(args))
         entry = phase('rank assignment', lambda: component_for_rank(entries, rank, world_size))
         if args.record_dir:
             args.record_dir = str(Path(args.record_dir)/f'rank{rank}')
@@ -549,6 +563,8 @@ def _train_initialized(args, entries, entry, device, index):
                     "box_size": box_size,
                     "apix": apix,
                     "resolution": float(args.resolution),
+                    "projection_frame": args.projection_frame,
+                    "projection_origin": list(args.projection_origin),
                     "map_resolution": target_resolution,
                     "epochs": args.epochs,
                     "batch_size": int(args.batch_size),
@@ -625,6 +641,8 @@ def _train_initialized(args, entries, entry, device, index):
                     apix=apix,
                     cutoff_range=5.0,
                     sigma_factor=1.0 / (math.pi * math.sqrt(2.0)),
+                    projection_frame=args.projection_frame,
+                    projection_origin=args.projection_origin,
                 )
                 projection = projection * float(args.particle_sign)
                 loss_frc = -compute_frc(
@@ -730,6 +748,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--norm", action="store_true", default=False, help='Min-max normalize each observed particle to [0,1]; constant images are rejected. Default: %(default)s.')
     parser.add_argument("--resolution", default=3.0, type=float, help='Legacy GMM coordinate/grid scale parameter; not generally a molmap resolution in Angstrom. Default: %(default)s.')
     parser.add_argument("--density_center", default=None, type=float, nargs=2, help='Two image-center coordinates in pixels; omitted uses the box center. Default: %(default)s.')
+    parser.add_argument('--projection-frame', choices=('legacy', 'fixed'), default='fixed',
+                        help='fixed uses one 3-D map frame (default); legacy dynamically recenters the assembled projection.')
+    parser.add_argument('--projection-origin', type=finite_float, nargs=3, default=None,
+                        metavar=('X_A', 'Y_A', 'Z_A'),
+                        help='Required for fixed: 3-D reference point shared by all placed component CIFs, in Angstrom. No universal default.')
     parser.add_argument(
         "--train_deterministic",
         action=argparse.BooleanOptionalAction,

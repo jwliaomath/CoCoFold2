@@ -84,6 +84,7 @@ def train_command(args, reference, star, cache, output):
         '--no-learn-gmm', '--coordinate-mode', 'global', '--output-format', 'cif',
         '--apix', '1', '--boxsize', '192', '--particle_sign', '-1', '--resolution', '3', '--map_resolution', '3',
         '--batch_size', '32', '--mini_batch_size', str(args.mini_batch_size), '--epochs', str(epochs),
+        '--projection-frame', 'fixed', '--projection-origin', '0', '0', '0',
         '--gmm-kernel', 'legacy', '--gmm-amplitude', 'auto', '--gmm-atom-chunk-size', '1000', '--gmm-checkpoint-peak2d'], epochs, count
 
 

@@ -30,6 +30,7 @@ def command(args):
         '--mrc_data_dir', str(args.mrc_dir.resolve()), '--output_trained_model_dir', str(args.output.resolve()/'model_'),
         '--record-dir', str(args.output.resolve()/'records'), '--backend', 'nccl',
         '--boxsize', '288', '--apix', '1.073', '--resolution', '3', '--map_resolution', '2.146',
+        '--projection-frame', 'fixed', '--projection-origin', '154.512', '154.512', '154.512',
         '--batch_size', '32', '--mini_batch_size', '16', '--particle_sign', '-1', '--transR',
         '--train_deterministic', '--seed', '42', '--rng-mode', 'legacy',
         '--learn-gmm', '--gmm-kernel', 'legacy', '--gmm-amplitude', 'auto',

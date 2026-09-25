@@ -31,8 +31,10 @@ Each rank owns:
 - component-local Gaussian renderer parameters.
 
 For each particle, all ranks render their components in the same experimental
-coordinate frame. CoCoFold2 uses differentiable distributed operations to
-obtain a shared projected origin and sum the component projections. Particle
+coordinate frame. With the default fixed-frame projection, every rank uses the
+same explicitly supplied 3D origin; the rendered component images are summed.
+The historical legacy mode instead derives a shared per-view origin from the
+assembled model. Particle
 sign, translation, CTF and FRC loss are then applied to the assembled
 projection, allowing one particle-space objective to update every component.
 
@@ -61,12 +63,10 @@ conda activate cocofold2
 ```
 
 The compatible Protenix checkpoint and common resources must be available as
-described in the main README. The public source layout used here is:
+described in the main README. They can live outside the source checkout:
 
 ```text
 CoCoFold2/
-├── checkpoint/
-├── common/
 ├── src/
 │   ├── inference.py
 │   ├── get_pdb.py
@@ -79,19 +79,26 @@ CoCoFold2/
 │       ├── prepare_contextual_diffusion_caches.py
 │       └── materialize_local_diffusion_cache.py
 └── docs/
+
+/path/to/protenix_resources/
+├── checkpoint/
+└── common/
 ```
 
 Configure the Python paths once per shell:
 
 ```bash
 export REPO_ROOT="$(pwd)"
+export PROTENIX_ROOT_DIR=/absolute/path/to/protenix_resources
 export COCOFOLD2_ROOT="${REPO_ROOT}/src"
 export CHAIN_PARALLEL_DIR="${REPO_ROOT}/src/chain_parallel"
 export PYTHONPATH="${COCOFOLD2_ROOT}:${CHAIN_PARALLEL_DIR}:${PYTHONPATH:-}"
 ```
 
 `COCOFOLD2_ROOT` must directly contain `ctf.py`, `particledataset.py`,
-`pts2img.py`, `utils.py` and `model/protenix.py`.
+`pts2img.py`, `utils.py` and `model/protenix.py`. `PROTENIX_ROOT_DIR` must
+contain the compatible `checkpoint/` and `common/` directories; it is not an
+output location.
 
 ## 2. Required inputs
 
@@ -153,26 +160,31 @@ For a three-group example:
 mkdir -p runs/target/independent/cache runs/target/independent/protenix
 
 python -u src/inference.py \
+  --resource-root "$PROTENIX_ROOT_DIR" \
   --input_json_path inputs/target_A.json \
   --sample_name target_A \
   --output_model_dir runs/target/independent/cache/ \
   --dump_dir runs/target/independent/protenix/A
 
 python -u src/inference.py \
+  --resource-root "$PROTENIX_ROOT_DIR" \
   --input_json_path inputs/target_BC.json \
   --sample_name target_BC \
   --output_model_dir runs/target/independent/cache/ \
   --dump_dir runs/target/independent/protenix/BC
 
 python -u src/inference.py \
+  --resource-root "$PROTENIX_ROOT_DIR" \
   --input_json_path inputs/target_DEF.json \
   --sample_name target_DEF \
   --output_model_dir runs/target/independent/cache/ \
   --dump_dir runs/target/independent/protenix/DEF
 ```
 
-Use a new output directory: inference refuses to overwrite existing caches.
-For one target and one seed, the compatible filenames include:
+`--output_model_dir` is the cache **directory** and `--dump_dir` is the separate
+Protenix prediction/summary **directory**. Use new destinations: inference
+refuses to overwrite existing caches. For one target and one seed, the
+compatible filenames include:
 
 ```text
 runs/target/independent/cache/target_A_diffusion_data.pth
@@ -182,17 +194,24 @@ runs/target/independent/cache/target_DEF_diffusion_data.pth
 
 ### 4.2 Generate and rigidly place each initial component
 
-Use `src/get_pdb.py` with the Protenix topology output corresponding to the
-same component cache:
+For a compatible cache, `src/get_pdb.py` reconstructs topology directly from
+its saved features:
 
 ```bash
 python -u src/get_pdb.py \
   --pdbid target_A \
   --diffusion_data_dir runs/target/independent/cache/target_A_diffusion_data.pth \
-  --cif_path /path/to/target_A_protenix_topology.cif \
   --out_dir runs/target/independent/initial/A \
+  --output-format cif \
   --device cuda:0
 ```
+
+This writes `target_A_initial_prediction.cif` and
+`target_A_initial_prediction_topology.json` inside `initial/A/`. If an older
+cache cannot supply atom identities, add `--cif_path` pointing to the
+**matching Protenix output** as a topology template, never to the deposited
+evaluation structure. The component trainer still requires the separately
+fitted CIFs in the manifest.
 
 Repeat for every component. Rigidly fit the generated component structures
 into one common experimental frame and preserve their atom ordering. The
@@ -244,6 +263,8 @@ torchrun --standalone --nproc_per_node="${NUM_COMPONENTS}" \
   --backend nccl \
   --boxsize REPLACE_WITH_BOX_SIZE \
   --apix REPLACE_WITH_PIXEL_SIZE \
+  --projection-frame fixed \
+  --projection-origin REPLACE_WITH_X_A REPLACE_WITH_Y_A REPLACE_WITH_Z_A \
   --resolution REPLACE_WITH_GMM_RESOLUTION \
   --map_resolution REPLACE_WITH_FRC_CUTOFF_RESOLUTION \
   --batch_size REPLACE_WITH_OUTER_BATCH_SIZE \
@@ -256,6 +277,13 @@ torchrun --standalone --nproc_per_node="${NUM_COMPONENTS}" \
 Add `--transR` only when required by the validated upstream orientation
 convention. Add `--update_affine_mat` only when the flip safeguard used in the
 registered experiment is intended.
+
+The trainer's `--output_trained_model_dir` is a **filename prefix**, not the
+cache directory from Section 4.1. For `.../results/model_`, epoch 1 writes
+component files such as `model_target_A_independent_rank0_1.cif/.pth`, plus
+`model_merged_1.cif` and the complete-epoch index `model_epoch_1.json` in
+the same `results/` directory. The component ID comes from the manifest.
+Choose a new prefix for a new run; existing outputs are protected.
 
 Absolute particle-stack paths in `rlnImageName` are used directly. Relative
 paths use `--mrc_data_dir` when supplied, otherwise the STAR file's directory.
@@ -274,6 +302,7 @@ For assemblies that can construct the standard full cache:
 mkdir -p runs/target/contextual/full_cache runs/target/contextual/protenix
 
 python -u src/inference.py \
+  --resource-root "$PROTENIX_ROOT_DIR" \
   --input_json_path inputs/target_full_complex.json \
   --sample_name target_full \
   --output_model_dir runs/target/contextual/full_cache/ \
@@ -361,8 +390,11 @@ portability and record the source-cache SHA-256.
 ### 5.5 Generate, place and register contextual components
 
 Run `src/get_pdb.py` for every contextual component cache, then rigidly place
-the generated structures in the same experimental frame. Create a training
-manifest with one contextual cache and fitted CIF per rank:
+the generated structures in the same experimental frame. The template-free
+command in Section 4.2 also applies to compatible contextual caches; add a
+matching Protenix topology template only if cache atom identities are
+insufficient. Create a training manifest with one contextual cache and fitted
+CIF per rank:
 
 ```yaml
 schema_version: 1
@@ -418,6 +450,7 @@ Pass the Protenix configuration override as an explicit key-value pair:
 mkdir -p runs/large_target/contextual/full_cache
 
 python -u src/inference.py \
+  --resource-root "$PROTENIX_ROOT_DIR" \
   --input_json_path inputs/large_target_full.json \
   --sample_name large_target_full \
   --output_model_dir runs/large_target/contextual/full_cache/ \
@@ -530,6 +563,8 @@ srun --ntasks=1 \
   --backend nccl \
   --boxsize REPLACE_WITH_BOX_SIZE \
   --apix REPLACE_WITH_PIXEL_SIZE \
+  --projection-frame fixed \
+  --projection-origin REPLACE_WITH_X_A REPLACE_WITH_Y_A REPLACE_WITH_Z_A \
   --resolution REPLACE_WITH_GMM_RESOLUTION \
   --map_resolution REPLACE_WITH_FRC_CUTOFF_RESOLUTION \
   --batch_size REPLACE_WITH_OUTER_BATCH_SIZE \
@@ -541,6 +576,15 @@ srun --ntasks=1 \
 
 Replace `K`, all paths and all data-dependent parameters. Add the partition,
 account, time and memory directives required by the local scheduler.
+
+The command above uses the new fixed-frame default. Replace the three origin
+placeholders with a point in the same experimental map frame as **every** placed
+component CIF. All ranks use that one origin; the recorded particle translation
+is applied after their rendered component images are summed. For the checked
+zero-origin, standard-axis 6ZBH-style 288-pixel map at 1.073 Å/pixel, use
+`154.512 154.512 154.512` after verifying the map and CIF coordinates.
+For earlier experiments, request `--projection-frame legacy` and omit the
+origin. See [choosing the projection origin](parameter_guide.md#choosing-the-projection-origin).
 
 The current implementation assumes all processes run within one `torchrun`
 job and all ranks load the same particle minibatches. Multi-node execution has
