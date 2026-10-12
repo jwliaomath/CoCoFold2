@@ -20,6 +20,7 @@ import xml.etree.ElementTree as ET
 
 EXCLUDED = [
     'tests/public/test_b2b_randomness.py::test_cuda_rng_isolation',
+    'tests/public/test_shared_decode.py::test_cuda_replay_only_uses_selected_device',
     'tests/test_gmm.py::GaussianTests::test_cuda_forward_backward_all_modes_and_mixed_legacy_devices',
     'tests/test_gmm_peak3d.py::Peak3DTests::test_peak3d_cuda_backward_including_cpu_amplitudes',
     'tests/test_gmm_peak2d_checkpoint.py::Peak2DCheckpointTests::test_cuda_multiple_adamw_steps_and_cpu_amplitudes',
@@ -193,7 +194,7 @@ def main():
     (out / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
     rows = ['# Public CPU checks', '', f"Passed: {summary['passed']}; counts: {summary.get('counts', {})}",
             '', 'Analytic denoiser; real public sampler/GMM/loss/optimizer/I/O. No real Protenix or weights.',
-            'Random/fine-tuning outside current public release scope. Multi-process/real parallel: B7b. Four CUDA-only tests excluded.', '',
+            f'Random/fine-tuning outside current public release scope. Multi-process/real parallel: B7b. {len(EXCLUDED)} CUDA-only tests excluded.', '',
             '| Level | Test | Result |', '|---|---|---|']
     rows.extend(f"| {r['level']} | {r['description'].replace('|', '/')} | {r['status']} |" for r in summary['tests'])
     if 'error' in summary:
