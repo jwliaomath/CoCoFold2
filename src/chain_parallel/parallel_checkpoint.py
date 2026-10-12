@@ -51,6 +51,8 @@ def resume_index(args, entries):
         if not path.is_file() or identity(path)['sha256'] != row['sha256']:
             raise ValueError(f'Incomplete/corrupt epoch component: {path}')
         updated.append(replace(entry,diffusion_data_dir=path))
+    from shared_decode import restore_decode_mode
+    data['science_args'] = restore_decode_mode(args, data['science_args'])
     explicit=set(getattr(args,'_explicit_options',[]))
     for key, default in (('projection_frame', 'legacy'), ('projection_origin', (0., 0., 0.))):
         if key not in data['science_args']:
@@ -87,6 +89,8 @@ def validate_resume(args, data, reports, raw, device):
         raise ValueError('Rank checkpoint and epoch index disagree')
     if not state['epoch_complete']:
         raise ValueError('Mid-epoch checkpoint cannot resume')
+    if state.get('decode_mode', 'legacy') != data['science_args'].get('decode_mode', 'legacy'):
+        raise ValueError('Rank checkpoint and epoch index disagree on decode mode')
     if state['runtime'] != runtime_signature(device):
         raise ValueError('Resume runtime differs; use warm-start')
 
@@ -144,7 +148,7 @@ def save_epoch(args, component, optimizer, loader, reports, epoch, step, complet
             refinement_sampler='global',refinement_seed_settings=component.seed_settings,export_sampling=snapshot,
             training_progress=dict(global_step=step,epoch=epoch+1,epoch_complete=complete),
             parallel_resume=dict(version=1,epoch_complete=complete,next_epoch=epoch+1 if complete else epoch,
-                global_step=step,rng=capture_rng_state(),diffusion_rng_stream=copy.deepcopy(getattr(component.configs,'diffusion_rng_stream',None)),
+                global_step=step,decode_mode=args.decode_mode,rng=capture_rng_state(),diffusion_rng_stream=copy.deepcopy(getattr(component.configs,'diffusion_rng_stream',None)),
                 data_generator_state=loader.generator.get_state(),runtime=runtime_signature(component.device)))
         if component.transform is not None:
             state['coordinate_transform']=component.transform.export_checkpoint(coordinates[0])

@@ -135,6 +135,11 @@ available GPU memory. See the entrypoint's help for their meanings and defaults.
 Use the documented learning-rate options for the relevant entrypoint rather than
 editing source constants.
 
+`--decode-mode auto` (default) shares decoder work across microbatches when
+stochasticity is fixed. `--decode-mode legacy` restores repeated decoding.
+A single microbatch uses one ordinary decode in either mode. See
+[shared decoding](shared-decoding.md) for memory and restart behavior.
+
 GMM learning is enabled by default. `--no-learn-gmm` disables learning of both
 atom amplitudes and widths. Kernel and amplitude choices are described in
 [Gaussian rendering kernels](gaussian_kernels.md); they are not interchangeable

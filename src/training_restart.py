@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 
 SCIENCE_ARGS = (
-    'seed', 'diffusion_seed', 'data_seed', 'rng_mode', 'train_deterministic',
+    'seed', 'diffusion_seed', 'data_seed', 'rng_mode', 'train_deterministic', 'decode_mode',
     'learn_gmm', 'transR', 'particle_sign', 'boxsize', 'apix', 'norm', 'resolution',
     'density_center', 'batch_size', 'mini_batch_size', 'update_affine_mat',
     'map_resolution', 'fsc_gamma', 'fsc_smooth_win', 'lr_bias', 'lr_atom_weights',
@@ -102,6 +102,8 @@ def prepare_restart(args):
         missing += [key for key in ('opt_state', 'gmm', 'z_bias', 'refinement_seed_settings') if cache.get(key) is None]
         if missing:
             raise ValueError('Incomplete resume state: ' + ', '.join(missing))
+        from shared_decode import restore_decode_mode
+        state['science_args'] = restore_decode_mode(args, state['science_args'])
         # Pre-extension checkpoints do not have fresh-width provenance. Their
         # saved GMM state is authoritative; do not require newly added fields.
         missing_science = [key for key in SCIENCE_ARGS if hasattr(args, key) and key not in state['science_args']

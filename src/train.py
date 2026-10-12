@@ -109,9 +109,11 @@ def main(args):
     from randomness import resolve_seeds, apply_seed_settings, seed_legacy, data_loader_options
     from training_restart import prepare_restart, input_identity, restart_gmm, capture_epoch_state, restore_epoch_rng
     restart_cache = prepare_restart(args)
+    from shared_decode import configure_decode, DecodeBatch
     resuming = getattr(args, 'resume', False)
     warm_start = getattr(args, 'warm_start', False)
     seed_settings = resolve_seeds(args)
+    configure_decode(args)
     from input_validation import validate_train_inputs, move_tree
     diffusion_data, dataset, input_report = validate_train_inputs(args, cache=restart_cache)
     if getattr(args, 'check_inputs', False):
@@ -474,11 +476,7 @@ def main(args):
                 losses = 0
                 penalties = 0
                 # ncc_losses = 0
-                for num_start in range(0, data.shape[0], mini_batch_size):
-                    num_end = min(num_start + mini_batch_size,  data.shape[0])
-                    # mb = num_end - num_start
-                    # batch_weight = mb / data.shape[0]
-
+                def decode_update():
                     if use_block_decoder:
                         pred_dict['coordinate']=decode_block(z_bias)
                     elif z is None:
@@ -521,13 +519,23 @@ def main(args):
                             inplace_safe=False,
                             enable_efficient_fusion=enable_efficient_fusion,
                         )
-                    if flag_update_mat and block_mode:
+                    return pred_dict["coordinate"]
+
+                decode_batch = DecodeBatch(args.decode_mode, int(data.shape[0]), mini_batch_size, device)
+                for num_start in range(0, data.shape[0], mini_batch_size):
+                    num_end = min(num_start + mini_batch_size,  data.shape[0])
+                    # mb = num_end - num_start
+                    # batch_weight = mb / data.shape[0]
+
+                    pred_dict["coordinate"] = decode_batch.coordinates(decode_update)
+                    update_placement = flag_update_mat and (not decode_batch.enabled or num_start == 0)
+                    if update_placement and block_mode:
                         updates = coordinate_transform.update_from_coordinates(pred_dict['coordinate'][0],
                                     getattr(args, 'block_update_trace_threshold', 2.5))
                         for update in updates:
                             record.event('alignment_update', epoch=epoch, global_step=global_step,
                                          minibatch_start=num_start, **update)
-                    elif flag_update_mat:
+                    elif update_placement:
                         with torch.no_grad():
                             _, current_rotation, current_translation = kabsch_alignment(pred_dict["coordinate"][0],ref_coords,return_transform=True)
                             rotation_diff = torch.trace(current_rotation @ rotation.T)
@@ -569,8 +577,11 @@ def main(args):
                     loss += penalty
                     # loss += z_reg_weight * torch.mean(z_bias**2)
                     loss.backward()
+                    decode_batch.micro_done()
 
 
+                del proj, loss, loss_frc, penalty, atom_coord
+                pred_dict["coordinate"] = decode_batch.finish()
                 optimizer.step()
                 global_step += 1
 
@@ -590,7 +601,8 @@ def main(args):
                              memory_unavailable_reason=None if torch.device(device).type == 'cuda' else 'cpu_device',
                              peak_memory_scope='process_peak_since_last_external_reset',
                              rmsd=None, rmsd_unavailable_reason='not_measured',
-                             loss_reduction='legacy_minibatch_sum; FRC divided by optimizer batch size')
+                             loss_reduction='legacy_minibatch_sum; FRC divided by optimizer batch size',
+                             **decode_batch.metadata())
                 sys.stdout.flush()
                 # Let an epoch-ending iterator finish normally so its RNG state
                 # matches uninterrupted training; only break for a partial epoch.
@@ -687,6 +699,8 @@ def build_parser():
     from training_restart import RestartArgumentParser, add_restart_arguments
     parser = RestartArgumentParser(description="Particle-guided CoCoFold2 latent refinement.")
     add_restart_arguments(parser)
+    from shared_decode import add_decode_arguments
+    add_decode_arguments(parser)
     from randomness import add_seed_arguments
     add_seed_arguments(parser, "train")
     add_record_arguments(parser)
@@ -717,7 +731,7 @@ def build_parser():
                         dest="train_deterministic", action=argparse.BooleanOptionalAction, default=True, help='Reuse fixed diffusion stochasticity; disabling resamples noise. Per-chain placement requires fixed stochasticity. Default: %(default)s.')
     parser.add_argument("--device", default="cuda:0", help='PyTorch device for this operation; distributed CUDA ranks use LOCAL_RANK. Default: %(default)s.')
     parser.add_argument("--batch_size", default=32, type=positive_int, help='Particles per optimizer update; all parallel ranks process the same batch. Default: %(default)s.')
-    parser.add_argument("--mini_batch_size", default=12, type=positive_int, help='Particles per loss/backward microbatch inside each update; smaller values trade memory for more decoding. Default: %(default)s.')
+    parser.add_argument("--mini_batch_size", default=12, type=positive_int, help='Particles per loss/backward microbatch inside each update; smaller values reduce renderer memory; shared mode keeps decoder calls independent of microbatch count. Default: %(default)s.')
     parser.add_argument("--update_affine_mat", default=False, action="store_true", help='Enable the existing rigid-transform update safeguard; per-chain mode tests the shared threshold independently per chain. Default: %(default)s.')
     parser.add_argument("--map_resolution", default=5., type=positive_float, help='Angstrom resolution cutoff of the active particle FRC objective; not the GMM rendering width. Default: %(default)s.')
     parser.add_argument("--halfmap1", default=None, help='Optional first half-map file, paired with halfmap2. Weights are prepared but not consumed by the current active FRC loss. Default: %(default)s.')
