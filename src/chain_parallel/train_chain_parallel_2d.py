@@ -437,11 +437,13 @@ def train(args: argparse.Namespace) -> None:
         args.projection_frame = 'legacy'
     if not hasattr(args, 'projection_origin'):
         args.projection_origin = (0., 0., 0.)
+    from shared_decode import configure_decode
     prefix = os.path.expanduser(str(args.output_trained_model_dir))
     trailing = prefix.endswith(('/', '\\'))
     args.output_trained_model_dir = os.path.abspath(prefix) + (os.sep if trailing else '')
     if args.check_inputs:
         entries, index = resume_index(args, load_manifest(args.component_manifest))
+        configure_decode(args)
         from projection_settings import resolve_projection_settings
         resolve_projection_settings(args)
         for rank in range(len(entries)):
@@ -461,6 +463,7 @@ def train(args: argparse.Namespace) -> None:
     rank, world_size, device = _setup_distributed(args)
     try:
         entries, index = phase('manifest/resume', lambda: resume_index(args, load_manifest(args.component_manifest)))
+        phase('decode settings', lambda: configure_decode(args))
         from projection_settings import resolve_projection_settings
         phase('projection settings', lambda: resolve_projection_settings(args))
         entry = phase('rank assignment', lambda: component_for_rank(entries, rank, world_size))
@@ -474,6 +477,7 @@ def train(args: argparse.Namespace) -> None:
 
 @recorded('train')
 def _train_initialized(args, entries, entry, device, index):
+    from shared_decode import DecodeBatch
     rank, world_size = entry.rank, len(entries)
     record = current_record()
     raw, dataset, report = phase('input preflight', lambda: preflight(args, entry))
@@ -621,14 +625,16 @@ def _train_initialized(args, entries, entry, device, index):
 
             losses = torch.zeros((), dtype=torch.float32)
             penalties = torch.zeros((), dtype=torch.float32)
+            decode_batch = DecodeBatch(args.decode_mode, int(data.shape[0]), int(args.mini_batch_size), device)
             for start_index in range(0, data.shape[0], int(args.mini_batch_size)):
                 end_index = min(
                     start_index + int(args.mini_batch_size), data.shape[0]
                 )
-                coordinate_samples = phase("decode", component.sample)
+                coordinate_samples = phase("decode", lambda: decode_batch.coordinates(component.sample))
                 coordinates = coordinate_samples[0]
                 component.pred_dict["coordinate"] = coordinate_samples
-                placed_coordinates = phase("placement", lambda: component.place_coordinates(coordinates, args.update_affine_mat))
+                placed_coordinates = phase("placement", lambda: component.place_coordinates(
+                    coordinates, args.update_affine_mat and (not decode_batch.enabled or start_index == 0)))
                 last_placed_coordinates = placed_coordinates
                 projection = distributed_project_gaussians(
                     projector=component.gmm,
@@ -664,10 +670,14 @@ def _train_initialized(args, entries, entry, device, index):
                 loss = loss_frc / world_size + local_penalty
                 phase('finite loss', lambda: _require_finite(loss, 'loss'))
                 loss.backward()
+                decode_batch.micro_done()
 
                 losses += loss_frc.detach().cpu()
                 penalties += detached_sum(local_penalty).cpu()
 
+            last_placed_coordinates = last_placed_coordinates.detach()
+            del projection, loss, loss_frc, local_penalty, placed_coordinates, coordinates, coordinate_samples
+            component.pred_dict["coordinate"] = phase("decoder backward", decode_batch.finish)
             phase('finite gradients', lambda: [_require_finite(p.grad, 'gradient') for group in optimizer.param_groups for p in group['params'] if p.grad is not None])
             optimizer.step()
             phase('finite parameters', lambda: [_require_finite(p, 'parameter') for group in optimizer.param_groups for p in group['params']])
@@ -686,6 +696,7 @@ def _train_initialized(args, entries, entry, device, index):
             elapsed = time.perf_counter() - start
 
             local_row = {
+                **decode_batch.metadata(),
                 "rank": rank,
                 "component_id": entry.component_id,
                 "epoch": epoch,
@@ -697,7 +708,7 @@ def _train_initialized(args, entries, entry, device, index):
                 "batch_time_seconds": elapsed,
                 "communication_time_seconds": "Not reported and not yet measured in this workspace.",
             }
-            record.event('train_step', global_step=global_step, epoch=epoch, batch=batch_number,
+            record.event('train_step', **decode_batch.metadata(), global_step=global_step, epoch=epoch, batch=batch_number,
                 component_id=entry.component_id, particle_indices=indices.tolist(),
                 total_loss=float(losses+penalties), elapsed_seconds=elapsed,
                 gmm_learning=args.learn_gmm, peak_memory_mb=peak_memory_mb)
@@ -759,8 +770,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=True, help='Reuse fixed diffusion stochasticity; disabling resamples noise. Per-chain placement requires fixed stochasticity. Default: %(default)s.')
     parser.add_argument("--device", default="cuda:0", help='PyTorch device for this operation; distributed CUDA ranks use LOCAL_RANK. Default: %(default)s.')
     parser.add_argument("--backend", choices=("nccl", "gloo"), default="nccl", help='Distributed communication backend: NCCL for CUDA training, Gloo for CPU tests. Default: %(default)s.')
+    from shared_decode import add_decode_arguments
+    add_decode_arguments(parser)
     parser.add_argument("--batch_size", default=32, type=int, help='Particles per optimizer update; all parallel ranks process the same batch. Default: %(default)s.')
-    parser.add_argument("--mini_batch_size", default=12, type=int, help='Particles per loss/backward microbatch inside each update; smaller values trade memory for more decoding. Default: %(default)s.')
+    parser.add_argument("--mini_batch_size", default=12, type=int, help='Particles per loss/backward microbatch inside each update; smaller values reduce renderer memory; shared mode keeps decoder calls independent of microbatch count. Default: %(default)s.')
     parser.add_argument("--update_affine_mat", action="store_true", default=False, help='Enable the existing rigid-transform update safeguard; per-chain mode tests the shared threshold independently per chain. Default: %(default)s.')
     parser.add_argument("--map_resolution", default=5.0, type=float, help='Angstrom resolution cutoff of the active particle FRC objective; not the GMM rendering width. Default: %(default)s.')
     parser.add_argument("--halfmap1", default=None, help='Optional first half-map file, paired with halfmap2. Weights are prepared but not consumed by the current active FRC loss. Default: %(default)s.')

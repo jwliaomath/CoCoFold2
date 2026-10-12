@@ -86,10 +86,11 @@ def worker(rank,folder):
         '--device','cpu','--backend','gloo','--boxsize','24','--batch_size','2','--mini_batch_size','1',
         '--projection-frame','legacy',
         '--epochs','1','--no-learn-gmm','--by-chain','--record-dir',str(folder/'first/records')])
-    for label in ('first','resumed','continuous','fixed','fault'):
+    for label in ('first','legacy','resumed','continuous','fixed','fault'):
         args=copy.deepcopy(base)
         args.output_trained_model_dir=str(folder/label/'model_')
         args.record_dir=str(folder/label/'records')
+        if label=='legacy': args.decode_mode='legacy'
         if label=='resumed':
             args.resume=str(folder/'first/model_epoch_1.json'); args.epochs=2
         if label=='continuous': args.epochs=2
@@ -111,6 +112,9 @@ def worker(rank,folder):
             if label!='fault' or 'injected decoder failure' not in str(exc): raise
         else:
             if label=='fault': raise AssertionError('Fault run unexpectedly passed')
+    shared=torch.load(folder/f'first/model_part{rank}_rank{rank}_1.pth',weights_only=False)
+    legacy=torch.load(folder/f'legacy/model_part{rank}_rank{rank}_1.pth',weights_only=False)
+    torch.testing.assert_close(shared['z_bias'],legacy['z_bias'],atol=2e-6,rtol=2e-5)
     resumed=torch.load(folder/f'resumed/model_part{rank}_rank{rank}_2.pth',weights_only=False)
     full=torch.load(folder/f'continuous/model_part{rank}_rank{rank}_2.pth',weights_only=False)
     mse=float((resumed['z_bias']-full['z_bias']).square().mean())
@@ -123,7 +127,7 @@ def worker(rank,folder):
     (folder/f'rank{rank}.json').write_text(json.dumps(dict(
         passed=True, resume_latent_mse=mse, projection_gradient=True,
         fixed_frame_projection_gradient=True, fixed_frame_training=True,
-        fault_propagation=True,
+        fault_propagation=True, shared_matches_legacy=True,
     )),encoding='utf-8')
 
 

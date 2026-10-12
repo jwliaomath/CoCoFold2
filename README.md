@@ -127,3 +127,7 @@ Liao, J., Hu, M., & Bao, C. (2026). CoCoFold2: scalable latent refinement of dif
 Machine-readable author and citation metadata are in [CITATION.cff](CITATION.cff).
 The code retains its [Apache-2.0 license](LICENSE); upstream software and data
 retain their respective terms and attribution requirements.
+
+### Shared decoding
+
+Fixed-stochasticity refinement now shares decoder work across particle microbatches by default (`--decode-mode auto`). Use `--decode-mode legacy` for repeated decoding. See [shared decoding](docs/shared-decoding.md) for memory behavior, logging, and checkpoint compatibility.

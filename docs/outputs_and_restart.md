@@ -94,3 +94,10 @@ sampling state. An explicit `--seed` requests that fixed diffusion sample;
 otherwise the saved diffusion seed is used where available, falling back to
 42 for old files. This is not a bitwise reproducibility guarantee across
 different hardware, CUDA kernels or software versions.
+
+## Decode strategy compatibility
+
+New checkpoints record the resolved decode strategy. Resume inherits that
+strategy; older public checkpoints without the field use `legacy`. Use
+`--warm-start` to change strategies, resetting optimizer and progress.
+See [shared decoding](shared-decoding.md) for experimental-checkpoint caveats.

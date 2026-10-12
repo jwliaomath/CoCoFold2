@@ -185,3 +185,7 @@
 !/website/static/paper-figure3.webp
 !/tests/reference/gmm_before_width_init.py
 !/tests/test_gmm_width_init.py
+
+!/src/shared_decode.py
+!/tests/public/test_shared_decode.py
+!/docs/shared-decoding.md
